@@ -86,8 +86,9 @@ comes from:
   fast balls; the ball made visible during some dead stretches (being carried back); player slots
   dropped in bursts; position noise. Three strengths (light / medium / heavy).
   *Calibration check:* the starter's `baseline_smooth50`, run on our degraded sample games, scores
-  spellF1 0.23–0.27 and macroF1 0.63–0.64 (medium/heavy) — almost exactly its published
-  BAR-ATH full-match score (0.2433 / 0.6724). The proxy is realistic.
+  spellF1 0.25–0.28 and macroF1 0.61–0.63 (heavy/medium) — close to its published BAR-ATH
+  full-match score (0.2433 / 0.6724). The proxy is realistic, if anything slightly harsh on the
+  frame level.
 * **Smart Tagging is simulated** on the sample games (they have none): set-piece windows around a
   random 55% of true restarts, opening 2.5–4.5 s early, team missing on 40% and wrong on 5%, plus
   false positives; phases as jittered (±2 s) sub-intervals of 60% of possessions longer than 3 s,
@@ -147,9 +148,7 @@ per half; frames outside the halves are `X` (never scored).
 **Smart Tagging priors.** For each tagged set piece, the restart instant is where the ball first
 moves faster than 6 m/s inside the window (else the window centre); before it the dead states get
 a bonus, after it the alive states — and the side the tag names, when it names one. Phases add a
-small bonus to the side they imply. The phase weight was tuned on simulated phases, whose error
-model is a guess; it stays small by construction (it can tip an ambiguous ball gap, not overrule
-the tracking).
+small bonus to the side they imply; their weight is deliberately below the tuned optimum (§6).
 
 ### 5.4 The possession rules, as implemented
 
@@ -172,10 +171,31 @@ Leave-one-game-out on the degraded sample games (official `possession_metrics.py
 
 | | spellF1 | macroF1 |
 |---|---|---|
-| starter `baseline_smooth50`, same data | 0.278 | 0.646 |
-| **this pipeline** | **RESULT_SPELL** | **RESULT_MACRO** |
+| starter `baseline_smooth50`, same data | 0.285 | 0.630 |
+| **this pipeline** | **0.601** | **0.887** |
 
-Per degradation strength: RESULT_BY_SETTING.
+| degradation | baseline spellF1 | ours spellF1 | ours macroF1 | possessions predicted / true |
+|---|---|---|---|---|
+| light | 0.322 | 0.630 | 0.898 | 770 / 1094 |
+| medium | 0.285 | 0.605 | 0.889 | 766 / 1094 |
+| heavy | 0.250 | 0.567 | 0.873 | 779 / 1094 |
+
+How the score was built up (all leave-one-game-out, mean over the nine cases):
+
+| step | spellF1 |
+|---|---|
+| hand-made control kernel + linear dead model + Viterbi, untuned | 0.398 |
+| tuned decoder constants | 0.56 |
+| dead-ball MLP + ownership model with past/future windows | 0.58 |
+| ball-track smoothing before differentiating | 0.585 |
+| Smart Tagging restart priors, re-tuned | 0.59 |
+| Smart Tagging phase prior at the robust weight (see below) | **0.601** |
+
+**The phase weight was chosen for robustness, not for the best simulated score.** The tuner
+wanted 0.75 (0.607). Re-simulating phases as only 70% or 60% correct, 0.75 *loses* up to 0.012
+against no phases at all, while 0.2 gains +0.008 / +0.005 / −0.002 across the three scenarios —
+so 0.2 ships. With no feedback before the deadline, a setting that cannot hurt much is worth more
+than one that wins the simulation.
 
 **Where it fails, and what we would do next:**
 
