@@ -1,0 +1,22 @@
+{
+ "sigma": 0.5,
+ "v0": 2.75,
+ "vs": 20.0,
+ "w_control": 3.9199999999999995,
+ "w_shape": 0.0,
+ "w_dead": 1.176,
+ "dead_bias": 1.0,
+ "w_alive_ctrl": 0.0,
+ "switch": 7.5,
+ "die": 21.42857142857143,
+ "restart": 30.0,
+ "restart_same": 6.25,
+ "w_tag": 2.8,
+ "w_tag_team": 0.6125,
+ "tag_pre_s": 3.5625,
+ "tag_post_s": 2.25,
+ "tag_kick_speed": 6.0,
+ "w_owner": 0.5,
+ "w_episode": 0.0,
+ "w_phase": 0.75
+}

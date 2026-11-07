@@ -1,5 +1,17 @@
 # More than a Hack 2027 — Phase 1: Ball Possession
 
+> **Team Smooth Operators — our solution.** Method, assets, training data, possession rules,
+> limitations: **[TECHNICAL.md](TECHNICAL.md)**. Code: [`solution/`](solution/) (the pipeline) and
+> [`dev/`](dev/) (training/tuning on Metrica's public sample games — no BAR-ATH labels used).
+> Regenerate the submission from the provided data:
+>
+> ```bash
+> pip install -r requirements-solution.txt
+> python -m solution.make_submission --team <team_name>   # -> evaluation/results/<team_name>.csv
+> ```
+>
+> Everything below is the organisers' original README.
+
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
 and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.
 

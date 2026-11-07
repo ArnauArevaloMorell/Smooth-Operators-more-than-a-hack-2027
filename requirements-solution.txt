@@ -1,0 +1,4 @@
+# Exact versions the submission was generated with (python 3.13). The pipeline needs numpy only;
+# pandas is used by the official validator/scorer that make_submission calls at the end.
+numpy==2.5.3
+pandas==3.0.5
