@@ -17,23 +17,29 @@ python -m solution.make_submission --team <team_name>
 Possession is a *segmentation* problem, and the ranking metric (`spellF1`) scores whole
 possessions by temporal IoU, so we never decide frames independently. We compute physically
 meaningful per-frame evidence from the tracking — *is a player of either team on the ball*, *is
-the ball in play*, *which team's collective shape looks like attacking* — turn it into scores
-with three small models trained on **other matches**, and decode the whole half at once with a
-four-state Viterbi segmentation (`H`, `A`, dead-after-`H`, dead-after-`A`) that pays a fixed cost
-for every possession change. That cost is an L0 penalty on the number of possessions: the
-possession count and each boundary's position come out of the evidence, which is exactly what
-IoU matching rewards. Every free constant was chosen on Metrica's public sample games with
-BAR-ATH-like degradation applied; nothing was fitted or tuned on BAR-ATH.
+the ball in play*, *which team's collective shape looks like attacking* — and give it to a
+**temporal convolutional network** that reads about ±25 s of the match around each moment and
+outputs, at every frame, the probability that home has the ball, away has it, or it is dead.
+Those probabilities, together with a few direct cues and the Smart Tagging restarts, are decoded
+for the whole half at once by a four-state Viterbi segmentation (`H`, `A`, dead-after-`H`,
+dead-after-`A`) that pays a cost for every possession change — an L0 penalty on the number of
+possessions, so the count and each boundary come out of the evidence, which is what IoU matching
+rewards. Everything learned or tuned comes from **other matches** — Metrica's public sample games
+and the DFL/IDSSE open Bundesliga data — degraded to look like BAR-ATH's automatic tracking;
+nothing was fitted or tuned on BAR-ATH. The network is trained with PyTorch but shipped as plain
+weights and run with numpy, so the submission needs numpy only.
 
 ```
 ATD (players by team, ball) ──► features (metres, seconds, per half)
-                                  │  control:  ball–player distance × velocity agreement
-                                  │  dead:     visibility, out-of-play location, tempo, ball speed
-                                  │  shape:    collective movement & stretch, attack-oriented
+                                  │  control:  ball–player distance × velocity agreement, episodes
+                                  │  dead:     visibility, out-of-play location, relative tempo
+                                  │  shape:    per-team advancement, stretch, movement to goal
+                                  │  touches:  contests, abrupt ball-velocity changes
                                   ▼
-                 dead-ball MLP ─► logit      ownership logistic ─► logit
+          temporal CNN (3-network ensemble) ──► P(home), P(away), P(dead) per frame
+          + dead-ball MLP, ownership & hazard models (direct cues, per-frame switch cost)
                                   ▼
-Smart Tagging ──► restart / phase priors ──► emissions (T × 4) ──► Viterbi ──► H/A/D per frame
+Smart Tagging ──► restart priors ──► emissions (T × 4) ──► Viterbi ──► H/A/D per frame
 ```
 
 ## 2. Why this, rather than something else
@@ -49,9 +55,14 @@ Smart Tagging ──► restart / phase priors ──► emissions (T × 4) ─�
   ownership raised it to ~0.93. Effort went where that says.
 * **Possession is a collective, ball-centred question,** and the tracking has no identities, so
   every feature is team-level: nearest player *per team*, team spreads, team movement.
+* **Context is the rest of the answer.** Per-frame models top out around 0.91 team accuracy under
+  BAR-ATH-like noise, because whether a touch changed possession depends on what happens over the
+  next seconds. A temporal CNN that sees ±25 s cut the held-out team errors by ~40% (0.914 → 0.952)
+  and the dead/alive errors by half (0.929 → 0.963), and lifted held-out spellF1 on the
+  human-labelled matches by +0.08 to +0.09 (§6).
 * **Small models, few constants.** The development set is three matches, so the models are a
-  32-unit MLP and two logistic regressions, and the decoder has ~20 constants, all shared across
-  matches. All of it is numpy, shipped as JSON, and deterministic.
+  32-unit MLP, logistic regressions and a 64-channel network, and the decoder has ~20 constants,
+  all shared across matches. Inference is numpy only and deterministic.
 
 ## 3. Assets: used and dropped
 
@@ -63,6 +74,8 @@ Smart Tagging ──► restart / phase priors ──► emissions (T × 4) ─�
 | homography | no | the ATD is already in pitch coordinates; the homography is only needed to go back to pixels, i.e. to use the video |
 | tactical / broadcast video | no | a better ball detector is the obvious next step (§6), but not in the time available |
 | broadcast ATD | no | not synchronised to the tactical timeline; re-aligning it was judged poor value next to the ownership work |
+| Metrica public sample games 1–3 | **yes, training & tuning** | other matches with tracking and human event data (§4) |
+| DFL / IDSSE open data, 7 Bundesliga matches | **yes, training & tuning** | other matches with 25 Hz tracking and the provider's per-frame ball-status and possession flags (§4) |
 | public 5-minute ground truth | **only to check correctness** | frames aligned, file well-formed, labels meaning what we think — never to choose between versions (RULES.md) |
 
 ## 4. Training and tuning data
@@ -89,16 +102,36 @@ comes from:
   spellF1 0.25–0.28 and macroF1 0.61–0.63 (heavy/medium) — close to its published BAR-ATH
   full-match score (0.2433 / 0.6724). The proxy is realistic, if anything slightly harsh on the
   frame level.
+* **DFL / IDSSE open data**: 7 full matches of the 2022/23 Bundesliga and 2. Bundesliga — Bassek,
+  M. et al. (2025), "An integrated dataset of spatiotemporal and event data in elite soccer",
+  *Scientific Data* 12, 195, doi:10.1038/s41597-025-04505-y; files on figshare,
+  doi:10.6084/m9.figshare.28196177, CC BY 4.0 (`dev/fetch_dfl_data.sh`, `dev/dfl_games.py`).
+  Full-pitch optical tracking at 25 Hz plus the provider's per-frame `BallStatus` (alive/dead)
+  and `BallPossession` (home/guest) flags — the same kind of answer the BAR-ATH ground truth is
+  built from. The possession flag changes on every touch, so possessions shorter than 1.5 s that
+  sit between two spells of the other team are merged back (a touch without control is not a
+  change, CHALLENGE.md); that brings DFL to ~3.8 possessions per minute, the Metrica rate. DFL
+  tracks the ball through every stoppage, unlike BAR-ATH, so the degradation hides it for all
+  (45%) or the first part (25%) of each stoppage. ~650 minutes of play, labelled by the provider's
+  systems.
 * **Smart Tagging is simulated** on the sample games (they have none): set-piece windows around a
   random 55% of true restarts, opening 2.5–4.5 s early, team missing on 40% and wrong on 5%, plus
   false positives; phases as jittered (±2 s) sub-intervals of 60% of possessions longer than 3 s,
   with the wrong team 15% of the time.
 
-Evaluation is **leave-one-game-out**: the models scoring game *g* never saw game *g*. Each game
-is degraded six times (light / medium / heavy, two independent random draws each), so every
-reported number and every tuning decision is an average over **18 cases** — a constant is only
-kept if it helps across noise realisations, not on one lucky draw. The shipped models
-(`solution/models.json`) are then trained on all of them.
+Evaluation is **leave-one-group-out**: the models scoring a match never saw it, under any noise
+draw. Folds are each Metrica game on its own and the DFL matches in two groups. Each Metrica game
+is degraded six times (light / medium / heavy, two independent draws each) and each DFL match
+twice (medium, heavy — the two settings that bracket BAR-ATH, §7): **32 cases**. Decoder
+constants are tuned on the 26 medium and heavy cases. The shipped models are then trained on all
+cases (`solution/models.json`, `solution/seqnet.npz`).
+
+**A caveat we measured, not assumed.** Held out, the final pipeline scores ~0.95 spellF1 on the DFL
+cases against ~0.67–0.74 on Metrica. DFL's possession flag is most likely generated by the
+provider's own rule from the tracking, which a network can learn to reproduce; DFL scores are
+therefore too flattering to forecast BAR-ATH, and **the Metrica rows (human-made labels) are the
+numbers we quote**. DFL is still valuable *training* data: removing it from the network's training
+costs −0.064 / −0.080 / −0.068 spellF1 on the held-out Metrica matches (light / medium / heavy).
 
 ## 5. The method in detail
 
@@ -138,6 +171,14 @@ halftime.
   ~0.90–0.92 on live frames, under degradation.
 * **Shape-only:** logistic regression on shape alone (held-out ~0.87 with no ball at all) — kept
   for the decoder to fall back on in ball gaps.
+* **Temporal CNN** (`solution/seqnet.py`, trained by `dev/train_seqnet.py`): the dead-ball,
+  ownership and hazard feature designs (251 columns) sampled 5 times a second and standardised; a
+  1×1 stem to 64 channels; seven residual blocks `x + W₂·relu(dilated 3-tap conv(x))` with
+  dilations 1, 2, …, 64 — each output step sees ~±25 s; a 1×1 head to three logits (home, away,
+  dead). Cross-entropy, AdamW, one-cycle schedule, 1,500 steps of 32 random 102-s crops. Halves
+  are processed separately. Shipped as an ensemble of three networks (seeds 0–2) whose
+  probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at export).
+  Held out: team accuracy 0.952 (ball gaps 0.910), alive/dead accuracy 0.963.
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
   from the contrast between the last half-second and the next (control by each side, the last and
   next controlling team), from signs of a contest (both sides within 3 m of the ball) and from
@@ -146,9 +187,11 @@ halftime.
 
 ### 5.3 Decoder (`solution/decode.py`, `solution/pipeline.py`)
 
-Per frame, emissions for the four states: the two team states get `±½ · (w_c·(c_H − c_A) +
-w_o·owner_logit + w_s·shape_logit)`, the two dead states get `w_d·(dead_logit + b)`, plus Smart
-Tagging priors. Transition costs: `die` for alive→dead, `restart` for dead→alive, plus
+Per frame, emissions for the four states: `w_seq · log P_net(state)` from the temporal CNN
+(home, away, and dead for both dead states), plus the direct cues — the two team states get
+`±½ · (w_c·(c_H − c_A) + w_o·owner_logit + w_s·shape_logit)`, the two dead states
+`w_d·(dead_logit + b)` — plus Smart Tagging priors. With the network present, tuning drives the
+shape weight and the set-piece team weight to zero: the network has absorbed them. Transition costs: `die` for alive→dead, `restart` for dead→alive, plus
 `restart_same` when play restarts with the side that had the ball before the stoppage (tuned:
 restarts more often go to the other side — throw-ins, goal kicks). The H↔A cost is **per frame**:
 `switch · exp(−w_h · clip(hazard_logit + b_h))` — cheap where the hazard model sees a contest or a
@@ -158,8 +201,9 @@ half; frames outside the halves are `X` (never scored).
 
 **Smart Tagging priors.** For each tagged set piece, the restart instant is where the ball first
 moves faster than 6 m/s inside the window (else the window centre); before it the dead states get
-a bonus, after it the alive states — and the side the tag names, when it names one. Phases add a
-small bonus to the side they imply; their weight is deliberately below the tuned optimum (§6).
+a bonus, after it the alive states. Phases add a small fixed bonus (0.1) to the side they imply:
+with the network present, phase weights between 0 and 0.2 change held-out spellF1 by less than
+0.001 whatever the phases' accuracy, so the smallest weight is the safest on a real match.
 
 ### 5.4 The possession rules, as implemented
 
@@ -178,26 +222,21 @@ small bonus to the side they imply; their weight is deliberately below the tuned
 
 ## 6. Results and limitations
 
-Leave-one-game-out on the degraded sample games (official `possession_metrics.py`), with the
-final simulation (§7: smooth player tracking, ball offset sized to BAR-ATH's):
+Held out (leave-one-group-out), official `possession_metrics.py`, final simulation (§7). The
+**Metrica rows are the ones to read** (human-made labels; DFL scores are too flattering, §4):
 
-| | spellF1 | macroF1 |
-|---|---|---|
-| starter `baseline_smooth50`, same data | 0.269 | 0.627 |
-| **this pipeline** | **0.582** | **0.881** |
+| held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
+|---|---|---|---|
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.739 / 0.933** |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.712 / 0.921** |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.670 / 0.904** |
+| DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
-| degradation (6 cases each) | baseline spellF1 | ours spellF1 | ours macroF1 | possessions predicted / true |
-|---|---|---|---|---|
-| light | 0.321 | 0.631 | 0.898 | 1437 / 2188 |
-| medium | 0.255 | 0.579 | 0.884 | 1385 / 2188 |
-| heavy — closest to BAR-ATH (§7) | 0.231 | 0.535 | 0.862 | 1334 / 2188 |
+(spellF1 / macroF1.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
+published BAR-ATH full-match score (0.243 / 0.672), so the simulation is a faithful stand-in; the
+heavy Metrica row, **~0.67 spellF1**, is our best estimate of the full-match result.
 
-The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its published BAR-ATH
-full-match score (0.243 / 0.672): the simulation is a faithful stand-in, and our heavy-case score
-is the best estimate we have of the full-match result.
-
-How the score was built up (leave-one-game-out, on the simulation as it stood at each step — the
-last simulation is harder, which is why the final number above is lower than this table's end):
+How the score was built (held out; each row on the simulation as it stood at that step):
 
 | step | spellF1 |
 |---|---|
@@ -205,33 +244,38 @@ last simulation is harder, which is why the final number above is lower than thi
 | tuned decoder constants | 0.56 |
 | dead-ball MLP + ownership model with past/future windows | 0.58 |
 | ball-track smoothing before differentiating | 0.585 |
-| Smart Tagging restart priors, re-tuned | 0.59 |
-| Smart Tagging phase prior at the robust weight (see below) | 0.601 |
-| learned switch hazard (per-frame possession-change cost), re-tuned on 18 cases | **0.614** |
+| Smart Tagging restart priors | 0.59 |
+| Smart Tagging phase prior at a robust weight | 0.601 |
+| learned switch hazard (per-frame possession-change cost) | 0.614 |
+| *simulation made harder to match BAR-ATH (§7)* | *0.582* |
+| rich ball-free team-shape features, tuned on BAR-ATH-like noise | 0.618 |
+| DFL matches added to training | 0.630 |
+| **temporal CNN, decoder re-tuned around it** | **0.810** (Metrica heavy 0.578 → 0.670) |
 
-**Smart Tagging weights were stress-tested, not just tuned.** The tagging is automatic and its
-error rate is unknown, so each prior was re-scored against tags much worse than simulated:
+**Decisions made against the simulation's preference, for the real match.**
 
-* *Phases:* the tuner wanted a weight of 0.58–0.75. Re-simulating phases as only 70% or 60%
-  correct, such a weight *loses* up to 0.012 against no phases at all, while 0.2 gains +0.008 /
-  +0.005 / −0.002 across the scenarios — so 0.2 ships.
+* *Phases:* without the network the tuner wanted weights of 0.58–0.75; re-simulated with phases
+  60–70% correct, such weights lose up to 0.012, so we shipped 0.2, and 0.1 once the network made
+  phases irrelevant (< 0.001 either way).
 * *Set pieces:* with the tag's team wrong 35% of the time and 40% false tags added, the tuned
-  weights still score 0.608 against 0.603 without set-piece tags — they cannot hurt much, so the
-  tuned values ship.
-
-With no feedback before the deadline, a setting that cannot hurt much is worth more than one that
-wins the simulation.
+  weights still beat no tags — kept.
+* *Decoder tuned on Metrica alone* (human labels only) gained +0.008 to +0.017 there but lost 0.02–0.05
+  on DFL, by switching possession less often (3.37 → 3.03 possessions/min on Metrica). On BAR-ATH
+  the pipeline already reports fewer possessions per minute (2.59) than any simulated case, so a
+  setting that switches even less is the wrong direction for the real match — not shipped.
 
 **Where it fails, and what we would do next:**
 
 * **Very short possessions** (< 2 s, a quarter of all possessions in the sample games' event data)
-  are still mostly missed: a one-touch interception rarely shows enough control to pay for two
-  switches, even at the lower cost the hazard model allows there.
+  remain the hardest: a one-touch interception rarely shows enough control to pay for two
+  switches, even with the network and the per-frame switch cost.
   Whether the BAR-ATH ground truth has as many of them is unknown (its public 5 minutes have 2 of
   17), so we did not push the switch cost down to chase them.
-* **Ball gaps.** Inside the ATD's long gaps (median 11 s) only team shape speaks, and a change of
-  possession there is found ~20% of the time. The single biggest improvement available is a
-  better ball: run a ball detector on the tactical video through the homography to fill the gaps.
+* **Ball gaps.** Inside the ATD's long gaps (median 11 s) the network reaches 0.91 team accuracy
+  against 0.95 with the ball seen. The biggest improvement left is a better ball: a ball detector
+  on the tactical video, through the homography, to fill the gaps; and, as some teams do, the
+  referee's whistle from the video's audio for stoppages — neither could be validated on the
+  development matches (no video, no audio), so neither was attempted blind.
 * **Domain shift.** Everything is tuned on three other matches with simulated noise; the
   simulation is calibrated (§4) but not identical. The possession count the pipeline reports on
   BAR-ATH is the first thing to sanity-check.
@@ -240,7 +284,7 @@ wins the simulation.
 
 The method was built entirely on other matches, so the real risk was not the method but the gap
 between our simulated noise and BAR-ATH's actual tracking. `make_submission` therefore prints a
-**health report**: aggregate statistics of the run next to their range on the simulation. Three
+**health report**: aggregate statistics of the run next to their range on the simulation. Five
 rounds on the real data, using only those statistics — never a label:
 
 1. **Player tempo.** First run: 95% of the match called dead. The report showed why — median
@@ -262,6 +306,17 @@ rounds on the real data, using only those statistics — never a label:
    cost was too high for the real evidence. We tried setting it per match so that agreement matched
    the simulation — label-free, so allowed — and measured it on the sample games first: neutral to
    negative (0.582 → 0.572–0.581), with erratic scales. Not shipped.
+
+4. **Evidence cross-check** (`solution/crosscheck.py`). The per-frame pipeline (update 3) showed
+   the decoder disagreeing with both tracking-based team models inside ball gaps far more than in
+   simulation (0.81 against 0.94–0.97), following the Smart Tagging phases instead — a sign that a
+   component did not transfer. Every run now prints, for each pair of evidence sources, how often
+   they agree, next to the simulated range.
+5. **The temporal CNN transfers.** On BAR-ATH the network agrees with the independent ownership
+   and shape models exactly as much as in simulation (0.923 and 0.910, inside 0.906–0.941 and
+   0.892–0.916), the decoder–ownership disagreement in ball gaps disappears (0.935), and the
+   possession rate moves toward the simulated range (1.94 → 2.59 per minute). Predicted dead ball
+   is 45%, plausible for a LaLiga match (ball in play ~55% of the time).
 
 The public 5 minutes were used only as the alignment check they are meant to be (a score near 0
 would mean misaligned frames or swapped teams); no version was chosen by it.
@@ -285,14 +340,28 @@ it — the first place to look if the real tracking differs from our simulation 
 public-window scores as an alignment check.
 
 Deterministic: same inputs → the same file, byte for byte (checked with and without the parse
-cache). The models and constants are committed (`solution/models.json`, `solution/params.json`).
-To regenerate *them* from scratch — from public data only:
+cache, and across machines on a public test bundle: `dev/make_fake_bundle.py`). The models,
+network weights and constants are committed (`solution/models.json`, `solution/seqnet.npz`,
+`solution/params.json`). To regenerate *them* from scratch — from public data only:
 
 ```bash
 bash dev/fetch_sample_data.sh          # Metrica public sample games -> data/sample-data/
-python dev/evaluate.py --baseline      # the starter baseline on the degraded sample games
-python dev/tune.py --rounds 3 --out solution/params.json
-python dev/train_models.py             # -> solution/models.json
-python dev/evaluate.py                 # leave-one-game-out scores
-python -m solution.test                # loader / decoder / writer self-tests, no data needed
+bash dev/fetch_dfl_data.sh             # DFL/IDSSE open data (CC BY 4.0) -> data/dfl/
+python dev/evaluate.py --baseline      # the starter baseline on the degraded development cases
+python dev/train_models.py             # per-frame models -> solution/models.json
+python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # training only
+.torchenv/bin/python dev/train_seqnet.py --logo     # held-out network outputs, for tuning
+python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
+.torchenv/bin/python dev/train_seqnet.py --final    # -> solution/seqnet.npz (3-network ensemble)
+python dev/evaluate.py                 # held-out scores
+python -m solution.test                # loader / decoder / model-width / writer self-tests
 ```
+
+## 9. Other teams' public work
+
+The competition repositories of other teams are public. We read them (code and write-ups only;
+two forks that appeared to contain the gated match data were not opened). Two ideas we found in
+common use there shaped our final weeks, and are credited here: the **DFL/IDSSE open dataset** as
+external training data, and a **temporal convolutional network over per-frame features**. Both were
+re-implemented independently and kept only after our own held-out tests showed a gain (§4, §6).
+Nothing was copied; no other team's labels, models or outputs were used.

@@ -28,7 +28,7 @@ C = 64
 DILATIONS = (1, 2, 4, 8, 16, 32, 64)
 CROP = 512            # steps = 102 s
 BATCH = 32
-STEPS = 3000
+STEPS = 1500
 LR = 2e-3
 
 
