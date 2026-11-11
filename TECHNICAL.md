@@ -182,16 +182,16 @@ Leave-one-game-out on the degraded sample games (official `possession_metrics.py
 
 | | spellF1 | macroF1 |
 |---|---|---|
-| starter `baseline_smooth50`, same data | 0.285 | 0.630 |
-| **this pipeline** | **0.601** | **0.887** |
+| starter `baseline_smooth50`, same data | 0.277 | 0.631 |
+| **this pipeline** | **0.614** | **0.893** |
 
-| degradation | baseline spellF1 | ours spellF1 | ours macroF1 | possessions predicted / true |
+| degradation (6 cases each) | baseline spellF1 | ours spellF1 | ours macroF1 | possessions predicted / true |
 |---|---|---|---|---|
-| light | 0.322 | 0.630 | 0.898 | 770 / 1094 |
-| medium | 0.285 | 0.605 | 0.889 | 766 / 1094 |
-| heavy | 0.250 | 0.567 | 0.873 | 779 / 1094 |
+| light | 0.314 | 0.649 | 0.908 | 1451 / 2188 |
+| medium | 0.280 | 0.617 | 0.896 | 1391 / 2188 |
+| heavy | 0.239 | 0.575 | 0.874 | 1345 / 2188 |
 
-How the score was built up (all leave-one-game-out, mean over the nine cases):
+How the score was built up (leave-one-game-out; the first rows on 9 cases, the last on 18):
 
 | step | spellF1 |
 |---|---|
@@ -200,18 +200,27 @@ How the score was built up (all leave-one-game-out, mean over the nine cases):
 | dead-ball MLP + ownership model with past/future windows | 0.58 |
 | ball-track smoothing before differentiating | 0.585 |
 | Smart Tagging restart priors, re-tuned | 0.59 |
-| Smart Tagging phase prior at the robust weight (see below) | **0.601** |
+| Smart Tagging phase prior at the robust weight (see below) | 0.601 |
+| learned switch hazard (per-frame possession-change cost), re-tuned on 18 cases | **0.614** |
 
-**The phase weight was chosen for robustness, not for the best simulated score.** The tuner
-wanted 0.75 (0.607). Re-simulating phases as only 70% or 60% correct, 0.75 *loses* up to 0.012
-against no phases at all, while 0.2 gains +0.008 / +0.005 / −0.002 across the three scenarios —
-so 0.2 ships. With no feedback before the deadline, a setting that cannot hurt much is worth more
-than one that wins the simulation.
+**Smart Tagging weights were stress-tested, not just tuned.** The tagging is automatic and its
+error rate is unknown, so each prior was re-scored against tags much worse than simulated:
+
+* *Phases:* the tuner wanted a weight of 0.58–0.75. Re-simulating phases as only 70% or 60%
+  correct, such a weight *loses* up to 0.012 against no phases at all, while 0.2 gains +0.008 /
+  +0.005 / −0.002 across the scenarios — so 0.2 ships.
+* *Set pieces:* with the tag's team wrong 35% of the time and 40% false tags added, the tuned
+  weights still score 0.608 against 0.603 without set-piece tags — they cannot hurt much, so the
+  tuned values ship.
+
+With no feedback before the deadline, a setting that cannot hurt much is worth more than one that
+wins the simulation.
 
 **Where it fails, and what we would do next:**
 
 * **Very short possessions** (< 2 s, a quarter of all possessions in the sample games' event data)
-  are mostly missed: a one-touch interception rarely shows enough control to pay for two switches.
+  are still mostly missed: a one-touch interception rarely shows enough control to pay for two
+  switches, even at the lower cost the hazard model allows there.
   Whether the BAR-ATH ground truth has as many of them is unknown (its public 5 minutes have 2 of
   17), so we did not push the switch cost down to chase them.
 * **Ball gaps.** Inside the ATD's long gaps (median 11 s) only team shape speaks, and a change of
