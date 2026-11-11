@@ -15,13 +15,13 @@ from . import features
 REFERENCE = {
     "ball visible, graded frames": (0.446, 0.716),
     "tracked players per graded frame": (19.853, 21.159),
-    "clear control episodes, share of graded frames": (0.093, 0.258),
-    "median ball-to-nearest-player distance (m)": (1.135, 1.956),
+    "clear control episodes, share of graded frames": (0.089, 0.258),
+    "median ball-to-nearest-player distance (m)": (1.135, 2.024),
     "median mean player speed (m/s)": (1.55, 1.784),
-    "predicted dead-ball share": (0.334, 0.433),
-    "possessions per minute": (2.419, 2.891),
-    "mean possession length (s)": (12.879, 14.615),
-    "decoded team agrees with ownership model": (0.943, 0.973),
+    "predicted dead-ball share": (0.305, 0.412),
+    "possessions per minute": (2.601, 2.964),
+    "mean possession length (s)": (12.801, 15.255),
+    "decoded team agrees with ownership model": (0.955, 0.979),
 }
 
 
@@ -59,7 +59,7 @@ def stats(F, codes, blocks, fps):
 
 
 def print_report(F, codes, blocks, fps):
-    print("\nhealth report  (value | range on the 18 degraded sample-game runs)")
+    print("\nhealth report  (value | range on the degraded development matches)")
     flagged = []
     for name, value in stats(F, codes, blocks, fps).items():
         lo_hi = REFERENCE.get(name)

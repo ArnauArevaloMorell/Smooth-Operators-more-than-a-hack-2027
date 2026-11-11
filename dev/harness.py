@@ -181,7 +181,7 @@ def train(cases, subsample=3):
 _LOGITS = {}
 # what decoding, tags and the health report read; everything else is dropped from the memo
 KEEP = ("vis", "dH", "dA", "rH", "rA", "ball_speed", "ms", "n_players", "dead_logit",
-        "shape_logit", "owner_logit", "episode", "hazard_logit")
+        "shape_logit", "owner_logit", "episode", "hazard_logit", "seq_lp")
 
 
 def attach_logits(case, models):
@@ -196,6 +196,9 @@ def attach_logits(case, models):
         F["episode"] = features.control_episodes(F, blocks).astype(np.float64)
         if "hazard" in models:
             F["hazard_logit"] = logreg.logit(models["hazard"], hazard_data(case)[0])
+        lp_path = os.path.join(CACHE_DIR, "seqlp_%d_%s_%d.npy" % case)
+        if os.path.isfile(lp_path):
+            F["seq_lp"] = np.load(lp_path).astype(np.float64)
         F = {k: F[k] for k in KEEP if k in F}
         _LOGITS[key] = (F, labels, blocks, tags)
     return _LOGITS[key]

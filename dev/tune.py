@@ -28,10 +28,10 @@ SPACE = {
     "switch": (0.5, 200.0), "die": (0.5, 300.0), "restart": (0.5, 300.0),
     "restart_same": (-50.0, 50.0),
     "w_tag": (0.0, 5.0), "w_tag_team": (0.0, 5.0), "tag_pre_s": (0.0, 5.0),
-    "tag_post_s": (0.0, 5.0), "w_owner": (0.0, 10.0), "w_phase": (0.0, 3.0), "w_episode": (0.0, 20.0), "w_hazard": (0.0, 2.0), "hazard_bias": (-4.0, 4.0),
+    "tag_post_s": (0.0, 5.0), "w_owner": (0.0, 10.0), "w_phase": (0.0, 3.0), "w_episode": (0.0, 20.0), "w_hazard": (0.0, 2.0), "hazard_bias": (-4.0, 4.0), "w_seq": (0.0, 20.0),
 }
 ADDITIVE = {"dead_bias", "restart_same", "v0", "tag_pre_s", "tag_post_s", "w_shape",
-            "w_alive_ctrl", "w_tag", "w_tag_team", "w_owner", "w_phase", "w_episode", "w_hazard", "hazard_bias"}
+            "w_alive_ctrl", "w_tag", "w_tag_team", "w_owner", "w_phase", "w_episode", "w_hazard", "hazard_bias", "w_seq"}
 
 
 def _one(args):

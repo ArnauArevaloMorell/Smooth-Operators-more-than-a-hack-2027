@@ -15,7 +15,7 @@ import os
 
 import numpy as np
 
-from . import decode, features, logreg
+from . import decode, features, logreg, seqnet
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PARAMS_PATH = os.path.join(HERE, "params.json")
@@ -37,8 +37,12 @@ def prepare(ball, xy, team, pitch, fps, blocks, models):
     F["shape_logit"] = logreg.logit(models["shape"], Xs)
     F["owner_logit"] = logreg.logit(models["owner"], Xo)
     F["episode"] = features.control_episodes(F, blocks).astype(np.float64)
+    Xh = features.hazard_design(F, fps, blocks)
     if "hazard" in models:
-        F["hazard_logit"] = logreg.logit(models["hazard"], features.hazard_design(F, fps, blocks))
+        F["hazard_logit"] = logreg.logit(models["hazard"], Xh)
+    net = seqnet.load()
+    if net is not None:
+        F["seq_lp"] = seqnet.log_probs(net, seqnet.design(Xd, Xo, Xh), blocks)
     return F
 
 
@@ -72,6 +76,13 @@ def emissions(F, p, tag_prior=None):
     alive_bonus = p["w_alive_ctrl"] * np.maximum(cH, cA)
     E[:, decode.DH] = dead - alive_bonus
     E[:, decode.DA] = dead - alive_bonus
+    # The temporal network's per-frame log-probabilities (home, away, dead), if shipped.
+    if p.get("w_seq", 0.0) and "seq_lp" in F:
+        lp = np.nan_to_num(F["seq_lp"], nan=np.log(1.0 / 3))
+        E[:, decode.H] += p["w_seq"] * lp[:, 0]
+        E[:, decode.A] += p["w_seq"] * lp[:, 1]
+        E[:, decode.DH] += p["w_seq"] * lp[:, 2]
+        E[:, decode.DA] += p["w_seq"] * lp[:, 2]
     if tag_prior is not None:
         E += tag_prior
     return E
