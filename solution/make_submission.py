@@ -32,6 +32,14 @@ from solution import epts, logreg, pipeline, report, tagging  # noqa: E402
 
 LETTERS = np.array(["H", "A", "D", "X"])
 
+# The checklist printed at the end: (level, message). OK = fine, WARN = look at it but the file
+# is usable, STOP = do not submit this file before understanding why.
+CHECKS = []
+
+
+def check(condition, message, fail_level="STOP"):
+    CHECKS.append(("OK" if condition else fail_level, message))
+
 
 def build(data_dir=None, use_tags=True, params_path=pipeline.PARAMS_PATH, verbose=True):
     t0 = time.time()
@@ -60,6 +68,19 @@ def build(data_dir=None, use_tags=True, params_path=pipeline.PARAMS_PATH, verbos
             int(ok.sum()), n, np.isfinite(ball[:, 0]).mean()))
 
     blocks = [(a, b + 1) for _, a, b in games.half_video_blocks(games.GAME)]
+    graded = np.zeros(n, dtype=bool)
+    for a_, b_ in blocks:
+        graded[a_:b_] = True
+    vis_g = float(np.isfinite(ball[graded, 0]).mean())
+    check(len(tr) == n and np.array_equal(tr.frame_id, np.arange(1, n + 1)),
+          "tracking has one record per video frame, ids 1..{} ({} records)".format(n, len(tr)))
+    check(min(int((tr.team == 0).sum()), int((tr.team == 1).sum())) >= 11,
+          "track slots split between both teams ({} home / {} away)".format(
+              int((tr.team == 0).sum()), int((tr.team == 1).sum())))
+    check("barc" in (tr.team_names[0] or "").lower(),
+          "home team (H) is Barcelona: file says H = {}, A = {}".format(*tr.team_names), "WARN")
+    check(0.50 <= vis_g <= 0.68,
+          "ball visible on {:.1%} of graded frames (DATA.md says 59.3%)".format(vis_g))
     models = logreg.load(pipeline.MODELS_PATH)
     p = pipeline.load_params(params_path)
     F = pipeline.prepare(ball, xy, tr.team, g["pitch"], g["fps"], blocks, models)
@@ -74,13 +95,19 @@ def build(data_dir=None, use_tags=True, params_path=pipeline.PARAMS_PATH, verbos
             if verbose:
                 print("smart tagging: {} set pieces ({} with a team), {} team phases".format(
                     len(set_pieces), sum(1 for s in set_pieces if s[2] is not None), len(phases)))
+            check(40 <= len(set_pieces) <= 80 and len(phases) >= 200,
+                  "Smart Tagging read: {} set pieces (DATA.md: 59), {} team phases".format(
+                      len(set_pieces), len(phases)), "WARN")
         except IOError as error:
             print("smart tagging not found, continuing without it: {}".format(error))
+            check(False, "Smart Tagging file not found -- the result is weaker without it", "WARN")
 
     codes = pipeline.predict(F, blocks, p, prior)
     if verbose:
         print("decoded in {:.0f}s".format(time.time() - t0))
-        report.print_report(F, codes, blocks, g["fps"])
+    flagged = report.print_report(F, codes, blocks, g["fps"])
+    check(not flagged, "health report: every value inside its sample-game range" if not flagged
+          else "health report flags: " + "; ".join(flagged), "WARN")
     return codes
 
 
@@ -91,7 +118,7 @@ def public_window_check(path):
                 for f in os.listdir(os.path.join(ROOT, "evaluation", "gt"))
                 if f.endswith("_possession_gt_public.csv")]
     if not gt_paths:
-        return
+        return None
     gt = pm.label_codes(pm.read_label_csv(gt_paths[0]))
     r = pm.evaluate(gt, pm.label_codes(pm.read_label_csv(path)))
     print("\npublic 5-minute window (correctness check only): spellF1 {:.4f}  macroF1 {:.4f}  "
@@ -99,6 +126,25 @@ def public_window_check(path):
                                                     r["n_pred_spells"], r["n_gt_spells"]))
     print("  baselines there: smooth50 spellF1 0.3256 / macroF1 0.6207. Far below that means "
           "something is misaligned or swapped -- stop and investigate.")
+    return r["spell_f1_mean"]
+
+
+def print_checklist(path):
+    print("\n" + "=" * 78 + "\nCHECKLIST\n" + "=" * 78)
+    for level, message in CHECKS:
+        print("  [{:^4}] {}".format(level, message))
+    levels = {level for level, _ in CHECKS}
+    print("-" * 78)
+    if "STOP" in levels:
+        print("  VERDICT: DO NOT SUBMIT YET -- fix the [STOP] lines first. Paste this console")
+        print("           output (text only, no data) to get help.")
+    elif "WARN" in levels:
+        print("  VERDICT: FILE IS VALID AND SUBMITTABLE: {}".format(os.path.relpath(path, ROOT)))
+        print("           but read the [WARN] lines -- they say where the real data differs from")
+        print("           what the method was tuned on. Paste this console output to discuss.")
+    else:
+        print("  VERDICT: READY TO SUBMIT: {}".format(os.path.relpath(path, ROOT)))
+    print("=" * 78)
 
 
 def write(codes, path):
@@ -125,8 +171,10 @@ def main():
 
     table = pm.read_label_csv(path)
     reason = pm.validate_submission(table, games.GAMES[games.GAME]["n_video_frames"])
+    check(reason is None, "file passes the official validator" + ("" if reason is None
+                                                                   else ": " + reason))
     if reason:
-        print("INVALID: {}".format(reason))
+        print_checklist(path)
         sys.exit(1)
     runs = [(a_, b_) for _, a_, b_ in
             [(h, s, e + 1) for h, s, e in games.half_video_blocks(games.GAME)]]
@@ -134,7 +182,12 @@ def main():
     print("wrote {}  (valid)  {} possessions, mean {:.1f}s, home share {:.1%}".format(
         os.path.relpath(path, ROOT), st["n_spells"], st["mean_duration_s"], st["home_share"]))
     print("sha256 {}".format(hashlib.sha256(open(path, "rb").read()).hexdigest()))
-    public_window_check(path)
+    spell = public_window_check(path)
+    if spell is not None:
+        check(spell >= 0.30, "public 5 minutes: spellF1 {:.3f} (starter baseline: 0.326; near 0 "
+              "means frames are misaligned or H/A swapped)".format(spell),
+              "STOP" if spell < 0.15 else "WARN")
+    print_checklist(path)
 
 
 if __name__ == "__main__":

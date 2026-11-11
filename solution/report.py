@@ -60,6 +60,7 @@ def stats(F, codes, blocks, fps):
 
 def print_report(F, codes, blocks, fps):
     print("\nhealth report  (value | range on the 18 degraded sample-game runs)")
+    flagged = []
     for name, value in stats(F, codes, blocks, fps).items():
         lo_hi = REFERENCE.get(name)
         flag = ""
@@ -67,6 +68,9 @@ def print_report(F, codes, blocks, fps):
             lo, hi = lo_hi
             pad = 0.15 * (hi - lo) + 1e-9
             flag = "" if lo - pad <= value <= hi + pad else "   <-- outside reference range"
+            if flag:
+                flagged.append(name)
             print("  {:<48} {:>7.3f} | {:.3f} .. {:.3f}{}".format(name, value, lo, hi, flag))
         else:
             print("  {:<48} {:>7.3f}".format(name, value))
+    return flagged
