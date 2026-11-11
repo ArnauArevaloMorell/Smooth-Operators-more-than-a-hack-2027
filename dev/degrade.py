@@ -70,6 +70,19 @@ def degrade(game, setting="medium", seed=0):
     T = len(ball)
     alive = labels < 2
 
+    # 0. Sources that track the ball through every stoppage (DFL) do not look like BAR-ATH, where
+    # the ball is often lost while dead: hide it for all of a stoppage (45%) or its first part
+    # (25%, the ball out of shot until it is fetched), keep it visible otherwise.
+    dead = labels == 2
+    if dead.any() and np.isfinite(ball[dead, 0]).mean() > 0.5:
+        edges0 = np.diff(np.r_[0, dead.astype(np.int8), 0])
+        for s, e in zip(np.flatnonzero(edges0 == 1), np.flatnonzero(edges0 == -1)):
+            u = rng.rand()
+            if u < 0.45:
+                ball[s:e] = np.nan
+            elif u < 0.70:
+                ball[s:s + int((e - s) * rng.uniform(0.3, 0.9))] = np.nan
+
     # 1. Dead stretches where the ball is visible: interpolate from last seen to next seen.
     edges = np.diff(np.r_[0, (labels == 2).astype(np.int8), 0])
     for s, e in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):

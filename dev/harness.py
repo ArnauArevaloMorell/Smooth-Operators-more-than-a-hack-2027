@@ -23,12 +23,34 @@ import degrade  # noqa: E402
 from solution import features, logreg, pipeline  # noqa: E402
 
 CACHE_DIR = os.path.join(ROOT, "data", "cache", "dev")
-GAMES = (1, 2, 3)
+METRICA_GAMES = (1, 2, 3)
+
+
+def _dfl_games():
+    try:
+        import dfl_games
+        return tuple(range(4, 4 + len(dfl_games.match_ids())))
+    except Exception:
+        return ()
+
+
+DFL_GAMES = _dfl_games()
+GAMES = METRICA_GAMES + DFL_GAMES
+
+
+def fold_of(g):
+    """Leave-one-group-out folds: each Metrica game alone; the DFL games in two groups."""
+    if g in METRICA_GAMES:
+        return g
+    return "dflA" if (g - 4) < (len(DFL_GAMES) + 1) // 2 else "dflB"
 # Two independent degradation draws per strength: tuning averages over 18 cases, so a parameter
 # is only kept if it helps across noise realisations, not on one lucky draw.
-CASES = [(g, s, seed) for g in GAMES
+CASES = [(g, s, seed) for g in METRICA_GAMES
          for s, seed in (("light", 0), ("medium", 1), ("heavy", 2),
                          ("light", 10), ("medium", 11), ("heavy", 12))]
+# DFL: the two settings that bracket BAR-ATH's measured noise (its health report sits between
+# medium and heavy), one draw each -- seven matches add more variety than more draws would.
+CASES += [(g, s, seed) for g in DFL_GAMES for s, seed in (("medium", 21), ("heavy", 22))]
 HAZARD_RADIUS = 5
 
 
@@ -157,6 +179,9 @@ def train(cases, subsample=3):
 
 
 _LOGITS = {}
+# what decoding, tags and the health report read; everything else is dropped from the memo
+KEEP = ("vis", "dH", "dA", "rH", "rA", "ball_speed", "ms", "n_players", "dead_logit",
+        "shape_logit", "owner_logit", "episode", "hazard_logit")
 
 
 def attach_logits(case, models):
@@ -171,6 +196,7 @@ def attach_logits(case, models):
         F["episode"] = features.control_episodes(F, blocks).astype(np.float64)
         if "hazard" in models:
             F["hazard_logit"] = logreg.logit(models["hazard"], hazard_data(case)[0])
+        F = {k: F[k] for k in KEEP if k in F}
         _LOGITS[key] = (F, labels, blocks, tags)
     return _LOGITS[key]
 
@@ -186,8 +212,11 @@ def logo_models():
             with open(LOGO_PATH, "rb") as handle:
                 _LOGO.update(pickle.load(handle))
         else:
+            by_fold = {}
+            for f in sorted(set(fold_of(g) for g in GAMES), key=str):
+                by_fold[f] = train([c for c in CASES if fold_of(c[0]) != f])
             for g in GAMES:
-                _LOGO[g] = train([c for c in CASES if c[0] != g])
+                _LOGO[g] = by_fold[fold_of(g)]
             with open(LOGO_PATH, "wb") as handle:
                 pickle.dump(dict(_LOGO), handle)
     return _LOGO

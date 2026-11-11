@@ -110,6 +110,27 @@ def test_decoder():
     print("ok  decoder recovers a noisy synthetic sequence ({:.1%} frames)".format(acc))
 
 
+def test_models_match_features():
+    """The shipped models must expect exactly the columns the feature code produces."""
+    from solution import features, logreg, pipeline
+    T = 600
+    rng = np.random.RandomState(0)
+    ball = rng.rand(T, 2).astype(np.float32)
+    xy = rng.rand(T, 22, 2).astype(np.float32)
+    team = np.array([0] * 11 + [1] * 11, dtype=np.int8)
+    blocks = [(0, T)]
+    F = features.compute(ball, xy, team, (105.3, 68.0), 25, blocks)
+    widths = {"dead": features.dead_design(F, (105.3, 68.0), 25, blocks)[0].shape[1],
+              "shape": features.shape_design(F, 25, blocks)[0].shape[1],
+              "owner": features.owner_design(F, 25, blocks).shape[1],
+              "hazard": features.hazard_design(F, 25, blocks).shape[1]}
+    models = logreg.load(pipeline.MODELS_PATH)
+    for name, width in widths.items():
+        assert len(models[name]["mean"]) == width, (name, len(models[name]["mean"]), width)
+    print("ok  shipped models match the feature code ({})".format(
+        ", ".join("{} {}".format(k, v) for k, v in widths.items())))
+
+
 def test_writer():
     n = 199319
     codes = np.full(n, 3, dtype=np.int8)
@@ -123,4 +144,5 @@ def test_writer():
 if __name__ == "__main__":
     test_loader()
     test_decoder()
+    test_models_match_features()
     test_writer()
