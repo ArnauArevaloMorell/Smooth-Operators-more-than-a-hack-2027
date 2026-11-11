@@ -104,9 +104,18 @@ def degrade(game, setting="medium", seed=0):
     n = rng.normal(0, cfg["ball_noise"], size=ball.shape)
     ball[:, 0] += n[:, 0] / L
     ball[:, 1] += n[:, 1] / W
-    pn = rng.normal(0, 0.15, size=xy.shape).astype(np.float32)
-    xy[..., 0] += pn[..., 0] / L
-    xy[..., 1] += pn[..., 1] / W
+    # Player noise is a slow drift, not per-frame jitter: the real ATD is smoothed (median mean
+    # player speed 1.47 m/s on BAR-ATH, the same as the clean sample games), and white jitter
+    # would inflate every speed -- which is exactly the mistake the first version made.
+    # Offsets of ~0.2 m drawn every 2 s and linearly interpolated: positions are off, speeds
+    # barely change (~0.15 m/s), as on the real, smoothed tracking.
+    step = 50
+    knots = rng.normal(0, 0.2, size=((T // step) + 2,) + xy.shape[1:])
+    u = (np.arange(T) % step / float(step))[:, None, None]
+    i = np.arange(T) // step
+    pn = knots[i] * (1 - u) + knots[i + 1] * u
+    xy[..., 0] += (pn[..., 0] / L).astype(np.float32)
+    xy[..., 1] += (pn[..., 1] / W).astype(np.float32)
 
     # 4. Player dropouts in bursts (mean 50 frames).
     S = xy.shape[1]

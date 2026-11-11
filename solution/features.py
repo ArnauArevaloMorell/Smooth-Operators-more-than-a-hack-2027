@@ -263,17 +263,18 @@ def dead_design(F, pitch, fps, blocks):
         add("centre_%s" % tag, (centre < 2.0).astype(float))
         add("six_%s" % tag, six.astype(float))
 
-    ms = F["ms"]
+    # Player tempo, always RELATIVE to the half's median: absolute speeds depend on how much the
+    # tracker smooths, and a model keyed on them called 95% of BAR-ATH dead (its tracking is
+    # smoother than our first simulation of it). Relative tempo means the same on any tracker.
+    ms = np.full(T, np.nan)
+    for s, e in blocks:
+        med = np.nanmedian(F["ms"][s:e])
+        ms[s:e] = F["ms"][s:e] / med if med > 0 else np.nan
     for sec in (1, 4, 10):
         add("ms_w%d" % sec, _block_apply(lambda v: window_mean(v, sec * fps), ms, blocks, T))
     add("ms_past3", _block_apply(lambda v: window_mean_dir(v, 3 * fps, 0), ms, blocks, T))
     add("ms_fut3", _block_apply(lambda v: window_mean_dir(v, 0, 3 * fps), ms, blocks, T))
-    # relative to the half's typical tempo, so a slower match does not look 'dead'
-    rel = np.full(T, np.nan)
-    for s, e in blocks:
-        med = np.nanmedian(ms[s:e])
-        rel[s:e] = window_mean(ms[s:e], 4 * fps) / med if med > 0 else np.nan
-    add("ms_rel4", rel)
+    add("ms_rel30", _block_apply(lambda v: window_mean(v, 30 * fps), ms, blocks, T))
 
     bs = np.where(vis, F["ball_speed"], np.nan)
     for sec in (1, 3):
