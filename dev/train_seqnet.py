@@ -112,7 +112,17 @@ class Net(nn.Module):
         return self.head(x)
 
 
-def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, permatch=False):
+def boundary_weights(y, radius=2, weight=2.0):
+    """1 + weight on steps within +/-radius of a label change (possession change or stoppage)."""
+    w = np.ones(len(y), dtype=np.float32)
+    ch = np.flatnonzero((y[1:] != y[:-1]) & (y[1:] != 3) & (y[:-1] != 3)) + 1
+    for c in ch:
+        w[max(0, c - radius):c + radius] += weight
+    return w
+
+
+def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, permatch=False,
+          boundary=0.0):
     torch.manual_seed(seed)
     rng = np.random.RandomState(seed)
     triples = training_seqs(cases, flip=flip, xheavy=xheavy)
@@ -129,27 +139,34 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
         seqs = [(((x - stats[k][0]) / stats[k][1]).astype(np.float32), y) for x, y, k in triples]
     else:
         seqs = [(((x - mean) / std).astype(np.float32), y) for x, y, _ in triples]
+    wts = [boundary_weights(y, weight=boundary) if boundary else np.ones(len(y), np.float32)
+           for _, y in seqs]
     lengths = np.array([len(y) for _, y in seqs], dtype=float)
     net = Net(allX.shape[1])
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=LR, total_steps=steps, pct_start=0.1)
-    lossf = nn.CrossEntropyLoss(ignore_index=3)
+    lossf = nn.CrossEntropyLoss(ignore_index=3, reduction="none")
     net.train()
     for step in range(steps):
-        xb, yb = [], []
+        xb, yb, wb = [], [], []
         for _ in range(BATCH):
             i = rng.choice(len(seqs), p=lengths / lengths.sum())
             x, y = seqs[i]
             a = rng.randint(0, max(1, len(y) - CROP))
-            xs, ys = x[a:a + CROP], y[a:a + CROP]
+            xs, ys, ws = x[a:a + CROP], y[a:a + CROP], wts[i][a:a + CROP]
             if len(ys) < CROP:
                 xs = np.pad(xs, ((0, CROP - len(ys)), (0, 0)))
                 ys = np.pad(ys, (0, CROP - len(ys)), constant_values=3)
+                ws = np.pad(ws, (0, CROP - len(ws)))
             xb.append(xs.T)
             yb.append(ys)
+            wb.append(ws)
         xb = torch.from_numpy(np.stack(xb))
         yb = torch.from_numpy(np.stack(yb))
-        loss = lossf(net(xb), yb)
+        wb = torch.from_numpy(np.stack(wb))
+        per = lossf(net(xb), yb)
+        valid = (yb != 3).float()
+        loss = (per * wb * valid).sum() / (wb * valid).sum().clamp(min=1.0)
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -191,6 +208,8 @@ def main():
     ap.add_argument("--flip", action="store_true", help="add team-swapped copies of the training data")
     ap.add_argument("--xheavy", action="store_true", help="add extra-heavy-noise training cases")
     ap.add_argument("--permatch", action="store_true", help="per-match input normalisation")
+    ap.add_argument("--boundary", type=float, default=0.0,
+                    help="extra loss weight near label changes (0 = plain cross-entropy)")
     ap.add_argument("--tag", default="", help="output prefix for --logo variants")
     ap.add_argument("--metrica-folds", action="store_true", help="--logo on the Metrica folds only")
     ap.add_argument("--metrica-only", action="store_true",
@@ -207,7 +226,8 @@ def main():
             train_cases = [c for c in hz.CASES if hz.fold_of(c[0]) != f and
                            (not a.metrica_only or c[0] in hz.METRICA_GAMES)]
             print("fold", f, "training on", len(train_cases), "cases", flush=True)
-            w = train(train_cases, steps=a.steps, flip=a.flip, xheavy=a.xheavy, permatch=a.permatch)
+            w = train(train_cases, steps=a.steps, flip=a.flip, xheavy=a.xheavy, permatch=a.permatch,
+                      boundary=a.boundary)
             np.savez(os.path.join(hz.CACHE_DIR, "seqnet%s_fold_%s.npz" % (a.tag, f)), **w)
             for c in hz.CASES:
                 if hz.fold_of(c[0]) != f:
@@ -223,7 +243,7 @@ def main():
         for seed in range(a.seeds):
             print("final network, seed", seed, flush=True)
             nets.append(train(hz.CASES, seed=seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
-                              permatch=a.permatch))
+                              permatch=a.permatch, boundary=a.boundary))
             seqnet.save(nets)          # saved after each member, so a partial ensemble is usable
         print("wrote", seqnet.WEIGHTS_PATH, "with", len(nets), "networks")
 
