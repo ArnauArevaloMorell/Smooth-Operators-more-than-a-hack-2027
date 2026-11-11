@@ -1,3 +1,17 @@
+# Two pipelines live in this folder
+
+| | command | sample-game spellF1 (18 degraded cases, same test) |
+|---|---|---|
+| **learned pipeline (submission candidate)** | `python -m solution.make_submission --team <team_name>` | **0.614** |
+| rule-based v1 (steps below) | `python solution/03_possession_v1.py` | 0.303 |
+| starter `baseline_smooth50` | `python starter/baseline.py` | 0.277 |
+
+The learned pipeline is described in [`../TECHNICAL.md`](../TECHNICAL.md); the comparison is
+`python dev/compare_v1.py <dir with possession_v1.py and common.py>`. It prints a health report
+and the public-window check at the end of the run.
+
+---
+
 # Hackathon 2027 - working steps (put this `solution/` folder at the root of the cloned repo)
 
 Run every command **from the repository root**, next to `games.py`.
