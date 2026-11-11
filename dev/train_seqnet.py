@@ -132,6 +132,7 @@ def main():
     ap.add_argument("--logo", action="store_true")
     ap.add_argument("--final", action="store_true")
     ap.add_argument("--steps", type=int, default=STEPS)
+    ap.add_argument("--seeds", type=int, default=3, help="ensemble size for --final")
     a = ap.parse_args()
     torch.set_num_threads(4)
     for c in hz.CASES:
@@ -150,9 +151,12 @@ def main():
                 lp = seqnet.log_probs(w, seqnet.design(Xd, Xo, Xh), blocks)
                 np.save(os.path.join(hz.CACHE_DIR, "seqlp_%d_%s_%d.npy" % c), lp.astype(np.float32))
     if a.final:
-        w = train(hz.CASES, steps=a.steps)
-        np.savez(seqnet.WEIGHTS_PATH, **w)
-        print("wrote", seqnet.WEIGHTS_PATH)
+        nets = []
+        for seed in range(a.seeds):
+            print("final network, seed", seed, flush=True)
+            nets.append(train(hz.CASES, seed=seed, steps=a.steps))
+            seqnet.save(nets)          # saved after each member, so a partial ensemble is usable
+        print("wrote", seqnet.WEIGHTS_PATH, "with", len(nets), "networks")
 
 
 if __name__ == "__main__":

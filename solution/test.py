@@ -127,6 +127,13 @@ def test_models_match_features():
     models = logreg.load(pipeline.MODELS_PATH)
     for name, width in widths.items():
         assert len(models[name]["mean"]) == width, (name, len(models[name]["mean"]), width)
+    from solution import seqnet
+    nets = seqnet.load()
+    if nets is not None:
+        seq_width = widths["dead"] + widths["owner"] + widths["hazard"]
+        for net in nets:
+            assert len(net["mean"]) == seq_width, ("seqnet", len(net["mean"]), seq_width)
+        widths["sequence net x%d" % len(nets)] = seq_width
     print("ok  shipped models match the feature code ({})".format(
         ", ".join("{} {}".format(k, v) for k, v in widths.items())))
 

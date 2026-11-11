@@ -31,10 +31,26 @@ def design(Xd, Xo, Xh):
 
 
 def load(path=WEIGHTS_PATH):
+    """The shipped network(s): a list of weight dicts (an ensemble), or None if not shipped.
+
+    The file stores each member under a prefix 'n<i>_'; a file without prefixes is one network.
+    """
     if not os.path.isfile(path):
         return None
     z = np.load(path, allow_pickle=False)
-    return {k: z[k] for k in z.files}
+    members = sorted({k.split("_", 1)[0] for k in z.files if k.startswith("n") and
+                      k.split("_", 1)[0][1:].isdigit()})
+    if not members:
+        return [{k: z[k] for k in z.files}]
+    return [{k[len(m) + 1:]: z[k] for k in z.files if k.startswith(m + "_")} for m in members]
+
+
+def save(nets, path=WEIGHTS_PATH):
+    arrays = {}
+    for i, net in enumerate(nets):
+        for k, v in net.items():
+            arrays["n%d_%s" % (i, k)] = v
+    np.savez(path, **arrays)
 
 
 def _conv(x, w, b, dilation=1):
@@ -61,17 +77,25 @@ def forward(net, X):
     return _conv(x, net["head_w"], net["head_b"]).T
 
 
-def log_probs(net, X_full, blocks):
-    """Per-frame (T, 3) log-probabilities over the full timeline; NaN outside blocks."""
+def log_probs(nets, X_full, blocks):
+    """Per-frame (T, 3) log-probabilities over the full timeline; NaN outside blocks.
+
+    nets: one weight dict, or a list of them -- an ensemble, whose probabilities are averaged.
+    """
+    if isinstance(nets, dict):
+        nets = [nets]
     T = len(X_full)
     out = np.full((T, 3), np.nan)
     for s, e in blocks:
         idx = np.arange(s + STRIDE // 2, e, STRIDE)
         if len(idx) < 2:
             continue
-        z = forward(net, X_full[idx])
-        z = z - z.max(axis=1, keepdims=True)
-        lp = z - np.log(np.exp(z).sum(axis=1, keepdims=True))
+        prob = 0.0
+        for net in nets:
+            z = forward(net, X_full[idx])
+            z = z - z.max(axis=1, keepdims=True)
+            prob = prob + np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
+        lp = np.log(prob / len(nets))
         frames = np.arange(s, e)
         for k in range(3):
             out[s:e, k] = np.interp(frames, idx, lp[:, k])
