@@ -51,6 +51,51 @@ def case_seq(case):
     return out
 
 
+def seq_direct(game_n, setting, seed, flip=False):
+    """Like case_seq, built straight from the game (no big case cache); flip=True swaps the two
+    teams' roles and the H/A labels -- the same match seen from the other side."""
+    path = os.path.join(hz.CACHE_DIR, "seqX_%d_%s_%d_%d.npz" % (game_n, setting, seed, int(flip)))
+    if os.path.isfile(path):
+        z = np.load(path)
+        return [(z["X%d" % i], z["y%d" % i]) for i in range(int(z["n"]))]
+    import degrade
+    import sample_games
+    from solution import features
+    g = sample_games.load_game(game_n)
+    ball, xy = degrade.degrade(g, setting, seed)
+    team = (1 - g.team) if flip else g.team
+    labels = g.labels.copy()
+    if flip:
+        labels = np.where(labels == 0, 1, np.where(labels == 1, 0, labels)).astype(labels.dtype)
+    blocks = hz.blocks_of(g.labels)
+    F = features.compute(ball, xy, team, g.pitch, g.fps, blocks)
+    Xd, _ = features.dead_design(F, g.pitch, g.fps, blocks)
+    Xo = features.owner_design(F, g.fps, blocks)
+    Xh = features.hazard_design(F, g.fps, blocks)
+    X = seqnet.design(Xd, Xo, Xh)
+    out = []
+    for s, e in blocks:
+        idx = np.arange(s + seqnet.STRIDE // 2, e, seqnet.STRIDE)
+        out.append((X[idx], labels[idx].astype(np.int64)))
+    np.savez(path, n=len(out), **{("X%d" % i): x for i, (x, _) in enumerate(out)},
+             **{("y%d" % i): y for i, (_, y) in enumerate(out)})
+    return out
+
+
+def training_seqs(cases, flip=False, xheavy=False):
+    """[(X, y, case_key)] for training: the cases, plus their flipped and extra-heavy versions."""
+    out = [(x, y, c) for c in cases for x, y in case_seq(c)]
+    games = sorted(set(c[0] for c in cases))
+    if flip:
+        out += [(x, y, c + ("flip",)) for c in cases for x, y in seq_direct(*c, flip=True)]
+    if xheavy:
+        extra = [(g, "xheavy", 30 + i) for g in games for i in range(2 if g in hz.METRICA_GAMES else 1)]
+        out += [(x, y, c) for c in extra for x, y in seq_direct(*c)]
+        if flip:
+            out += [(x, y, c + ("flip",)) for c in extra for x, y in seq_direct(*c, flip=True)]
+    return out
+
+
 class Net(nn.Module):
     def __init__(self, d_in):
         super().__init__()
@@ -67,14 +112,23 @@ class Net(nn.Module):
         return self.head(x)
 
 
-def train(cases, seed=0, steps=STEPS, verbose=True):
+def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, permatch=False):
     torch.manual_seed(seed)
     rng = np.random.RandomState(seed)
-    seqs = [sq for c in cases for sq in case_seq(c)]
-    allX = np.vstack([x for x, _ in seqs])
+    triples = training_seqs(cases, flip=flip, xheavy=xheavy)
+    allX = np.vstack([x for x, _, _ in triples])
     mean = allX.mean(axis=0)
     std = allX.std(axis=0) + 1e-6
-    seqs = [(((x - mean) / std).astype(np.float32), y) for x, y in seqs]
+    if permatch:
+        # each (match, degradation, side) standardised by its own statistics, as at inference
+        stats = {}
+        for x, _, key in triples:
+            stats.setdefault(key, []).append(x)
+        stats = {k: (np.vstack(v).mean(axis=0), np.vstack(v).std(axis=0) + 1e-6)
+                 for k, v in stats.items()}
+        seqs = [(((x - stats[k][0]) / stats[k][1]).astype(np.float32), y) for x, y, k in triples]
+    else:
+        seqs = [(((x - mean) / std).astype(np.float32), y) for x, y, _ in triples]
     lengths = np.array([len(y) for _, y in seqs], dtype=float)
     net = Net(allX.shape[1])
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
@@ -103,12 +157,13 @@ def train(cases, seed=0, steps=STEPS, verbose=True):
         if verbose and (step % 500 == 0 or step == steps - 1):
             print("  step %d loss %.4f" % (step, loss.item()), flush=True)
     net.eval()
-    return export(net, mean, std)
+    return export(net, mean, std, permatch)
 
 
-def export(net, mean, std):
+def export(net, mean, std, permatch=False):
     w = {"mean": mean.astype(np.float64), "std": std.astype(np.float64),
          "n_blocks": np.array(len(DILATIONS)), "dilations": np.array(DILATIONS),
+         "permatch": np.array(int(permatch)),
          "stem_w": net.stem.weight.detach().double().numpy(),
          "stem_b": net.stem.bias.detach().double().numpy(),
          "head_w": net.head.weight.detach().double().numpy(),
@@ -122,7 +177,7 @@ def export(net, mean, std):
     x = np.random.RandomState(1).randn(300, len(mean)) * std + mean
     with torch.no_grad():
         t = net(torch.from_numpy(((x - mean) / std).T[None].astype(np.float32)))[0].numpy().T
-    n = seqnet.forward(w, x)
+    n = seqnet.forward(w, (x - mean) / std, prenormalised=True)
     assert np.max(np.abs(t - n)) < 1e-3, np.max(np.abs(t - n))
     return w
 
@@ -133,6 +188,11 @@ def main():
     ap.add_argument("--final", action="store_true")
     ap.add_argument("--steps", type=int, default=STEPS)
     ap.add_argument("--seeds", type=int, default=3, help="ensemble size for --final")
+    ap.add_argument("--flip", action="store_true", help="add team-swapped copies of the training data")
+    ap.add_argument("--xheavy", action="store_true", help="add extra-heavy-noise training cases")
+    ap.add_argument("--permatch", action="store_true", help="per-match input normalisation")
+    ap.add_argument("--tag", default="", help="output prefix for --logo variants")
+    ap.add_argument("--metrica-folds", action="store_true", help="--logo on the Metrica folds only")
     ap.add_argument("--metrica-only", action="store_true",
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
@@ -141,28 +201,29 @@ def main():
         case_seq(c)
     if a.logo:
         folds = sorted(set(hz.fold_of(g) for g in hz.GAMES), key=str)
-        if a.metrica_only:
+        if a.metrica_only or a.metrica_folds:
             folds = [f for f in folds if f in hz.METRICA_GAMES]
         for f in folds:
             train_cases = [c for c in hz.CASES if hz.fold_of(c[0]) != f and
                            (not a.metrica_only or c[0] in hz.METRICA_GAMES)]
             print("fold", f, "training on", len(train_cases), "cases", flush=True)
-            w = train(train_cases, steps=a.steps)
-            np.savez(os.path.join(hz.CACHE_DIR, "seqnet_fold_%s.npz" % f), **w)
+            w = train(train_cases, steps=a.steps, flip=a.flip, xheavy=a.xheavy, permatch=a.permatch)
+            np.savez(os.path.join(hz.CACHE_DIR, "seqnet%s_fold_%s.npz" % (a.tag, f)), **w)
             for c in hz.CASES:
                 if hz.fold_of(c[0]) != f:
                     continue
                 F, Xd, Xs, labels, blocks, tags, Xo = hz.case_data(*c)
                 Xh, _ = hz.hazard_data(c)
                 lp = seqnet.log_probs(w, seqnet.design(Xd, Xo, Xh), blocks)
-                prefix = "seqlpM" if a.metrica_only else "seqlp"
+                prefix = "seqlpM" if a.metrica_only else ("seqlp" + a.tag)
                 np.save(os.path.join(hz.CACHE_DIR, "%s_%d_%s_%d.npy" % ((prefix,) + c)),
                         lp.astype(np.float32))
     if a.final:
         nets = []
         for seed in range(a.seeds):
             print("final network, seed", seed, flush=True)
-            nets.append(train(hz.CASES, seed=seed, steps=a.steps))
+            nets.append(train(hz.CASES, seed=seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
+                              permatch=a.permatch))
             seqnet.save(nets)          # saved after each member, so a partial ensemble is usable
         print("wrote", seqnet.WEIGHTS_PATH, "with", len(nets), "networks")
 

@@ -34,13 +34,16 @@ _BALLFLAGS = re.compile(r'BallPossession="(\d)" BallStatus="(\d)"')
 
 
 def match_ids():
-    """The match ids that have both a match-information and a positions file on disk."""
-    out = []
-    for path in sorted(glob.glob(os.path.join(DFL_DIR, "DFL_04_03_positions_raw_observed_*.xml"))):
+    """Match ids available on disk: raw positions + match information, or an already-built cache
+    (so the 2.6 GB of raw XML can be deleted once parsed)."""
+    out = set()
+    for path in glob.glob(os.path.join(DFL_DIR, "DFL_04_03_positions_raw_observed_*.xml")):
         mid = path.rsplit("_", 1)[-1][:-4]
         if glob.glob(os.path.join(DFL_DIR, "DFL_02_01_matchinformation_*_%s.xml" % mid)):
-            out.append(mid)
-    return out
+            out.add(mid)
+    for path in glob.glob(os.path.join(DFL_DIR, "cache", "DFL-MAT-*.npz")):
+        out.add(os.path.basename(path)[:-4])
+    return sorted(out)
 
 
 def _teams(mid):

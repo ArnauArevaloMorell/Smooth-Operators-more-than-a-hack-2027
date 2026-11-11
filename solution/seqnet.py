@@ -65,9 +65,11 @@ def _conv(x, w, b, dilation=1):
     return out
 
 
-def forward(net, X):
+def forward(net, X, prenormalised=False):
     """Logits (T_steps, 3) for one block of strided features X (T_steps, D)."""
-    x = ((X - net["mean"]) / net["std"]).T.astype(np.float64)
+    if not prenormalised:
+        X = (X - net["mean"]) / net["std"]
+    x = X.T.astype(np.float64)
     x = _conv(x, net["stem_w"], net["stem_b"])
     n_blocks = int(net["n_blocks"])
     for i in range(n_blocks):
@@ -86,13 +88,21 @@ def log_probs(nets, X_full, blocks):
         nets = [nets]
     T = len(X_full)
     out = np.full((T, 3), np.nan)
-    for s, e in blocks:
-        idx = np.arange(s + STRIDE // 2, e, STRIDE)
+    # Per-match normalisation (networks trained with it): standardise by THIS match's own
+    # statistics over its graded, strided frames -- label-free adaptation to the tracker.
+    steps = [np.arange(s + STRIDE // 2, e, STRIDE) for s, e in blocks]
+    allX = np.vstack([X_full[i] for i in steps if len(i)]) if steps else X_full[:0]
+    m_mean = allX.mean(axis=0) if len(allX) else 0.0
+    m_std = allX.std(axis=0) + 1e-6 if len(allX) else 1.0
+    for (s, e), idx in zip(blocks, steps):
         if len(idx) < 2:
             continue
         prob = 0.0
         for net in nets:
-            z = forward(net, X_full[idx])
+            if int(net.get("permatch", 0)):
+                z = forward(net, (X_full[idx] - m_mean) / m_std, prenormalised=True)
+            else:
+                z = forward(net, X_full[idx])
             z = z - z.max(axis=1, keepdims=True)
             prob = prob + np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
         lp = np.log(prob / len(nets))

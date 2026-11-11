@@ -56,6 +56,9 @@ SETTINGS = {
                    player_drop=0.07),
     "heavy": dict(alive_missing=0.35, dead_visible=0.3, ball_noise=0.5, ball_offset=1.2,
                   player_drop=0.10),
+    # beyond BAR-ATH on every axis -- training-only, so the network has seen worse than the match
+    "xheavy": dict(alive_missing=0.42, dead_visible=0.3, ball_noise=0.6, ball_offset=1.6,
+                   player_drop=0.12),
 }
 
 
