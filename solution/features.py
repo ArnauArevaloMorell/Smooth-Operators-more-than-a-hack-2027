@@ -191,7 +191,48 @@ def compute(ball, xy, team, pitch, fps, blocks):
                 xA = P[:, ~home, 0] * sign
                 F["shape_dl"][s:e] = (np.nanmean(xH, axis=1) - np.nanmean(xA, axis=1))
         F["attack_sign"][s:e] = sign
+        _rich_shape(F, P, VP, home, sign, L, s, e)
     return F
+
+
+RICH_SHAPE = ("cx", "vx", "sx", "sy", "comp", "max", "deep", "opp", "fwdv")
+
+
+def _rich_shape(F, P, VP, home, sign, L, s, e):
+    """Per-team shape, each team oriented toward ITS attacking goal (x' = metres toward it).
+
+    Advancement (centroid, most advanced, deepest 15%), movement toward goal (all players, and
+    the front half of the team), stretch and compactness, players in the opponent's half. The
+    attacking side pushes up, spreads and runs forward; the defending side drops and compacts.
+    Ball-free by design: this is what decides ownership inside the tracking's long ball gaps.
+    """
+    import warnings
+    T = len(F["vis"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for k, m, sg in (("H", home, sign), ("A", ~home, -sign)):
+            x = P[:, m, 0] * sg + (L if sg < 0 else 0.0)
+            y = P[:, m, 1]
+            vx = VP[:, m, 0] * sg
+            cx = np.nanmean(x, 1)
+            cy = np.nanmean(y, 1)
+            vals = {
+                "cx": cx / L,
+                "vx": np.nanmean(vx, 1),
+                "sx": np.nanstd(x, 1),
+                "sy": np.nanstd(y, 1),
+                "comp": np.nanmean(np.hypot(x - cx[:, None], y - cy[:, None]), 1),
+                "max": np.nanmax(np.where(np.isfinite(x), x, -np.inf), 1) / L,
+                "deep": np.nanpercentile(x, 15, axis=1) / L,
+                "opp": np.nansum(x > L / 2.0, 1).astype(float),
+                "fwdv": np.nanmean(np.where(x > np.nanmedian(x, 1)[:, None], vx, np.nan), 1),
+            }
+            for name, v in vals.items():
+                key = "rs_%s%s" % (name, k)
+                if key not in F:
+                    F[key] = np.full(T, np.nan)
+                v = np.where(np.isfinite(v), v, np.nan)
+                F[key][s:e] = v
 
 
 # -- design matrices for the two learned models -----------------------------------------------
@@ -393,6 +434,14 @@ def shape_design(F, fps, blocks):
         for sec in (1, 4):
             names.append("%s_w%d" % (key, sec))
             cols.append(_block_apply(lambda v: window_mean(v, sec * fps), F[key], blocks, T))
+    # rich per-team shape (_rich_shape): home-minus-away and each side, five windows
+    if "rs_cxH" in F:
+        for name in RICH_SHAPE:
+            h, a = F["rs_%sH" % name], F["rs_%sA" % name]
+            for key, v in (("d", h - a), ("H", h), ("A", a)):
+                for b, f in ((25, 25), (100, 100), (50, 0), (0, 50), (250, 250)):
+                    names.append("rs_%s%s_%d_%d" % (name, key, b, f))
+                    cols.append(_block_apply(lambda u: window_mean_dir(u, b, f), v, blocks, T))
     X = np.nan_to_num(np.column_stack(cols), nan=0.0)
     return X, names
 

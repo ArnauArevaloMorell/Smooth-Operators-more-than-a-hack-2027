@@ -142,3 +142,22 @@ def tag_prior_from_setpieces(set_pieces, F, p, T, fps):
             prior[r:hi, other] -= p["w_tag_team"]
     return prior
 
+
+# -- Smart Tagging phase weight, set from the phases' measured accuracy on this match -----------
+
+def phase_weight(agreement, p):
+    """Phase weight from the label-free agreement of phases with clear control episodes.
+
+    The map (p['phase_weight_map'], [[agreement, weight], ...], interpolated linearly, flat
+    outside) was measured on the sample games by simulating phases of known accuracy
+    (dev/exp_phase_adapt.py): the agreement statistic tracks the true accuracy closely, and the
+    better the phases the more weight they earn. The map sits a little below the optimum and is
+    capped, because Metrica's phases come from the same tracking and their errors may be
+    correlated with ours. Falls back to the fixed p['w_phase'] when there is nothing to measure.
+    """
+    table = p.get("phase_weight_map")
+    if not table or agreement is None:
+        return p.get("w_phase", 0.0)
+    xs = [row[0] for row in table]
+    ys = [row[1] for row in table]
+    return float(np.interp(agreement, xs, ys))

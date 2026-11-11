@@ -69,3 +69,20 @@ def phase_prior(phases, T, weight):
             prior[s:e, side] += weight / 2.0
             prior[s:e, 1 - side] -= weight / 2.0
     return prior
+
+
+def phase_agreement(phases, episodes, T):
+    """Label-free estimate of how often the phases' team is right on THIS match.
+
+    episodes: +1 / -1 / 0 per frame, frames where a team clearly controls the ball (98-99% precise
+    on the development games). Returns (agreement, n_frames): the share of episode frames inside
+    phases whose side matches the phase's side. No ground truth involved.
+    """
+    implied = np.zeros(T)
+    for s, e, side in phases:
+        s, e = max(0, s), min(T, e)
+        implied[s:e] += 1.0 if side == 0 else -1.0
+    m = (episodes != 0) & (implied != 0)
+    if not m.any():
+        return None, 0
+    return float(np.mean(np.sign(implied[m]) == episodes[m])), int(m.sum())

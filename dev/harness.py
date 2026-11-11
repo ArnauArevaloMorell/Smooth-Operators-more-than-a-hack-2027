@@ -206,8 +206,12 @@ def run_case(case, p, models=None, use_tags=True):
     if use_tags:
         from solution import tagging
         prior = pipeline.tag_prior_from_setpieces(tags, F, p, T, 25)
-        if p.get("w_phase", 0.0):
-            prior = prior + tagging.phase_prior(simulate_phases(labels, blocks, case[2]), T,
-                                                p["w_phase"])
+        phases = simulate_phases(labels, blocks, case[2])
+        w = p.get("w_phase", 0.0)
+        if p.get("phase_weight_map"):
+            agreement, _ = tagging.phase_agreement(phases, F["episode"].astype(int), T)
+            w = pipeline.phase_weight(agreement, p)
+        if w:
+            prior = prior + tagging.phase_prior(phases, T, w)
     pred = pipeline.predict(F, blocks, p, prior)
     return labels, pred

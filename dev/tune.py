@@ -62,7 +62,12 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--rounds", type=int, default=2)
     ap.add_argument("--only", nargs="*", default=None)
+    ap.add_argument("--settings", nargs="*", default=None,
+                    help="tune on these degradation settings only (e.g. medium heavy)")
     a = ap.parse_args()
+    if a.settings:
+        hz.CASES[:] = [c for c in hz.CASES if c[1] in a.settings]
+        print("tuning on {} cases: {}".format(len(hz.CASES), sorted(set(c[1] for c in hz.CASES))))
     p = json.load(open(a.params))
     hz.logo_models()
     for c in hz.CASES:

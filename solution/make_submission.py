@@ -91,7 +91,13 @@ def build(data_dir=None, use_tags=True, params_path=pipeline.PARAMS_PATH, verbos
             st_path = games.require(["smart_tagging"], data_dir=data_dir)[0]
             set_pieces, phases = tagging.load(st_path, tr.team_names, g["fps"])
             prior += pipeline.tag_prior_from_setpieces(set_pieces, F, p, n, g["fps"])
-            prior += tagging.phase_prior(phases, n, p.get("w_phase", 0.0))
+            agreement, n_agree = tagging.phase_agreement(
+                phases, np.where(graded, F["episode"], 0).astype(int), n)
+            w_ph = pipeline.phase_weight(agreement, p)
+            prior += tagging.phase_prior(phases, n, w_ph)
+            if verbose and agreement is not None:
+                print("phase tags agree with clear ball control on {:.1%} of {} frames "
+                      "-> phase weight {:.2f}".format(agreement, n_agree, w_ph))
             if verbose:
                 print("smart tagging: {} set pieces ({} with a team), {} team phases".format(
                     len(set_pieces), sum(1 for s in set_pieces if s[2] is not None), len(phases)))
