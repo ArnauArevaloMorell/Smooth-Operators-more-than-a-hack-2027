@@ -62,9 +62,13 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--rounds", type=int, default=2)
     ap.add_argument("--only", nargs="*", default=None)
+    ap.add_argument("--metrica-only", action="store_true",
+                    help="tune on the Metrica cases only (human-made labels)")
     ap.add_argument("--settings", nargs="*", default=None,
                     help="tune on these degradation settings only (e.g. medium heavy)")
     a = ap.parse_args()
+    if a.metrica_only:
+        hz.CASES[:] = [c for c in hz.CASES if c[0] in hz.METRICA_GAMES]
     if a.settings:
         hz.CASES[:] = [c for c in hz.CASES if c[1] in a.settings]
         print("tuning on {} cases: {}".format(len(hz.CASES), sorted(set(c[1] for c in hz.CASES))))

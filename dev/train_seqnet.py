@@ -133,13 +133,19 @@ def main():
     ap.add_argument("--final", action="store_true")
     ap.add_argument("--steps", type=int, default=STEPS)
     ap.add_argument("--seeds", type=int, default=3, help="ensemble size for --final")
+    ap.add_argument("--metrica-only", action="store_true",
+                    help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
     torch.set_num_threads(4)
     for c in hz.CASES:
         case_seq(c)
     if a.logo:
-        for f in sorted(set(hz.fold_of(g) for g in hz.GAMES), key=str):
-            train_cases = [c for c in hz.CASES if hz.fold_of(c[0]) != f]
+        folds = sorted(set(hz.fold_of(g) for g in hz.GAMES), key=str)
+        if a.metrica_only:
+            folds = [f for f in folds if f in hz.METRICA_GAMES]
+        for f in folds:
+            train_cases = [c for c in hz.CASES if hz.fold_of(c[0]) != f and
+                           (not a.metrica_only or c[0] in hz.METRICA_GAMES)]
             print("fold", f, "training on", len(train_cases), "cases", flush=True)
             w = train(train_cases, steps=a.steps)
             np.savez(os.path.join(hz.CACHE_DIR, "seqnet_fold_%s.npz" % f), **w)
@@ -149,7 +155,9 @@ def main():
                 F, Xd, Xs, labels, blocks, tags, Xo = hz.case_data(*c)
                 Xh, _ = hz.hazard_data(c)
                 lp = seqnet.log_probs(w, seqnet.design(Xd, Xo, Xh), blocks)
-                np.save(os.path.join(hz.CACHE_DIR, "seqlp_%d_%s_%d.npy" % c), lp.astype(np.float32))
+                prefix = "seqlpM" if a.metrica_only else "seqlp"
+                np.save(os.path.join(hz.CACHE_DIR, "%s_%d_%s_%d.npy" % ((prefix,) + c)),
+                        lp.astype(np.float32))
     if a.final:
         nets = []
         for seed in range(a.seeds):

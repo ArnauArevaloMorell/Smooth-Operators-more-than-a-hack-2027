@@ -1,43 +1,25 @@
 {
- "sigma": 1.4,
- "v0": 3.125,
+ "sigma": 0.7,
+ "v0": 3.875,
  "vs": 20.0,
  "w_control": 2.8,
- "w_shape": 0.25,
- "w_dead": 1.15248,
- "dead_bias": 1.0,
+ "w_shape": 0.0,
+ "w_dead": 0.806736,
+ "dead_bias": 2.0,
  "w_alive_ctrl": 0.3125,
  "switch": 5.357143,
  "die": 122.448978,
- "restart": 59.999998,
+ "restart": 83.999997,
  "restart_same": 6.25,
  "w_tag": 4.05,
- "w_tag_team": 0.6125,
+ "w_tag_team": 0.0,
  "tag_pre_s": 4.8125,
- "tag_post_s": 1.625,
+ "tag_post_s": 2.25,
  "tag_kick_speed": 6.0,
  "w_owner": 0.5,
  "w_episode": 0.0,
- "w_phase": 0.2,
+ "w_phase": 0.1,
  "w_hazard": 0.525,
- "hazard_bias": 0.5,
- "phase_weight_map": [
-  [
-   0.65,
-   0.2
-  ],
-  [
-   0.75,
-   0.45
-  ],
-  [
-   0.83,
-   0.7
-  ],
-  [
-   0.92,
-   0.9
-  ]
- ],
+ "hazard_bias": 1.0,
  "w_seq": 2.0
 }
