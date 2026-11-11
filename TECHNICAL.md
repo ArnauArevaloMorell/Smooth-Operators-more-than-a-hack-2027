@@ -176,9 +176,14 @@ halftime.
   1×1 stem to 64 channels; seven residual blocks `x + W₂·relu(dilated 3-tap conv(x))` with
   dilations 1, 2, …, 64 — each output step sees ~±25 s; a 1×1 head to three logits (home, away,
   dead). Cross-entropy, AdamW, one-cycle schedule, 1,500 steps of 32 random 102-s crops. Halves
-  are processed separately. Shipped as an ensemble of three networks (seeds 0–2) whose
-  probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at export).
-  Held out: team accuracy 0.952 (ball gaps 0.910), alive/dead accuracy 0.963.
+  are processed separately. Training data is doubled by **team-swap augmentation** — every case
+  also appears with the two teams' roles swapped and H/A labels exchanged, so the network has no
+  reason to prefer a side — and widened with an **extra-heavy** noise setting beyond BAR-ATH's on
+  every axis. At inference the network also reads the match with the teams swapped and the two
+  readings are averaged (**test-time team swap**). Shipped as an ensemble of five networks (seeds
+  0–4) whose probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
+  export). Held out: team accuracy 0.952 (ball gaps 0.910), alive/dead accuracy 0.963 (before
+  the swap augmentation).
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
   from the contrast between the last half-second and the next (control by each side, the last and
   next controlling team), from signs of a contest (both sides within 3 m of the ball) and from
@@ -250,7 +255,14 @@ How the score was built (held out; each row on the simulation as it stood at tha
 | *simulation made harder to match BAR-ATH (§7)* | *0.582* |
 | rich ball-free team-shape features, tuned on BAR-ATH-like noise | 0.618 |
 | DFL matches added to training | 0.630 |
-| **temporal CNN, decoder re-tuned around it** | **0.810** (Metrica heavy 0.578 → 0.670) |
+| temporal CNN, decoder re-tuned around it | 0.810 (Metrica heavy 0.578 → 0.670) |
+| **team-swap augmentation + extra-heavy noise + test-time team swap** | Metrica mean 0.706 → **0.732**, heavy 0.670 → **0.698** |
+
+Network variants we tested on the held-out Metrica matches (mean / heavy spellF1): team-swap
+augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input normalisation
+0.704 / 0.659 — rejected**; swap augmentation with test-time swap 0.731 / 0.692; with extra-heavy
+noise as well 0.732 / 0.698 (shipped: best on heavy, the regime BAR-ATH is in). Re-scanning the
+decoder's network weight and switch cost for the new outputs moved nothing beyond ±0.003.
 
 **Decisions made against the simulation's preference, for the real match.**
 

@@ -196,7 +196,9 @@ def attach_logits(case, models):
         F["episode"] = features.control_episodes(F, blocks).astype(np.float64)
         if "hazard" in models:
             F["hazard_logit"] = logreg.logit(models["hazard"], hazard_data(case)[0])
-        lp_path = os.path.join(CACHE_DIR, "seqlp_%d_%s_%d.npy" % case)
+        # SEQ_TAG selects a network variant's held-out outputs (dev/train_seqnet.py --tag)
+        lp_path = os.path.join(CACHE_DIR, "seqlp%s_%d_%s_%d.npy" % (
+            (os.environ.get("SEQ_TAG", ""),) + case))
         if os.path.isfile(lp_path):
             F["seq_lp"] = np.load(lp_path).astype(np.float64)
         F = {k: F[k] for k in KEEP if k in F}

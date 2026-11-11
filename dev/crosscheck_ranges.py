@@ -4,6 +4,8 @@ import multiprocessing as mp
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import harness as hz
+if os.environ.get("METRICA_ONLY"):
+    hz.CASES[:] = [c for c in hz.CASES if c[0] in hz.METRICA_GAMES]
 from solution import crosscheck, pipeline, tagging
 
 def one(case):

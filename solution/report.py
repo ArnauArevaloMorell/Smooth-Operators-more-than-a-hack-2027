@@ -15,13 +15,13 @@ from . import features
 REFERENCE = {
     "ball visible, graded frames": (0.446, 0.716),
     "tracked players per graded frame": (19.853, 21.159),
-    "clear control episodes, share of graded frames": (0.089, 0.258),
-    "median ball-to-nearest-player distance (m)": (1.135, 2.024),
+    "clear control episodes, share of graded frames": (0.093, 0.258),
+    "median ball-to-nearest-player distance (m)": (1.135, 1.956),
     "median mean player speed (m/s)": (1.55, 1.784),
-    "predicted dead-ball share": (0.294, 0.425),
-    "possessions per minute": (3.008, 3.868),
-    "mean possession length (s)": (9.797, 12.179),
-    "decoded team agrees with ownership model": (0.913, 0.953),
+    "predicted dead-ball share": (0.297, 0.428),
+    "possessions per minute": (2.848, 3.563),
+    "mean possession length (s)": (11.198, 12.91),
+    "decoded team agrees with ownership model": (0.924, 0.954),
 }
 
 
