@@ -3,7 +3,7 @@
 **More than a Hack 2027, Phase 1: ball possession.** One label per tactical-video frame, `H` / `A`
 / `D`, from the provided automatic tracking and Smart Tagging.
 
-Reproduce the submission (details in [§7](#7-reproduction)):
+Reproduce the submission (details in [§8](#8-reproduction)):
 
 ```bash
 pip install -r requirements-solution.txt
@@ -178,20 +178,26 @@ small bonus to the side they imply; their weight is deliberately below the tuned
 
 ## 6. Results and limitations
 
-Leave-one-game-out on the degraded sample games (official `possession_metrics.py`):
+Leave-one-game-out on the degraded sample games (official `possession_metrics.py`), with the
+final simulation (§7: smooth player tracking, ball offset sized to BAR-ATH's):
 
 | | spellF1 | macroF1 |
 |---|---|---|
-| starter `baseline_smooth50`, same data | 0.277 | 0.631 |
-| **this pipeline** | **0.614** | **0.893** |
+| starter `baseline_smooth50`, same data | 0.269 | 0.627 |
+| **this pipeline** | **0.582** | **0.881** |
 
 | degradation (6 cases each) | baseline spellF1 | ours spellF1 | ours macroF1 | possessions predicted / true |
 |---|---|---|---|---|
-| light | 0.314 | 0.649 | 0.908 | 1451 / 2188 |
-| medium | 0.280 | 0.617 | 0.896 | 1391 / 2188 |
-| heavy | 0.239 | 0.575 | 0.874 | 1345 / 2188 |
+| light | 0.321 | 0.631 | 0.898 | 1437 / 2188 |
+| medium | 0.255 | 0.579 | 0.884 | 1385 / 2188 |
+| heavy — closest to BAR-ATH (§7) | 0.231 | 0.535 | 0.862 | 1334 / 2188 |
 
-How the score was built up (leave-one-game-out; the first rows on 9 cases, the last on 18):
+The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its published BAR-ATH
+full-match score (0.243 / 0.672): the simulation is a faithful stand-in, and our heavy-case score
+is the best estimate we have of the full-match result.
+
+How the score was built up (leave-one-game-out, on the simulation as it stood at each step — the
+last simulation is harder, which is why the final number above is lower than this table's end):
 
 | step | spellF1 |
 |---|---|
@@ -230,7 +236,37 @@ wins the simulation.
   simulation is calibrated (§4) but not identical. The possession count the pipeline reports on
   BAR-ATH is the first thing to sanity-check.
 
-## 7. Reproduction
+## 7. Adapting to the real match without labels
+
+The method was built entirely on other matches, so the real risk was not the method but the gap
+between our simulated noise and BAR-ATH's actual tracking. `make_submission` therefore prints a
+**health report**: aggregate statistics of the run next to their range on the simulation. Three
+rounds on the real data, using only those statistics — never a label:
+
+1. **Player tempo.** First run: 95% of the match called dead. The report showed why — median
+   player speed 1.47 m/s on BAR-ATH against 2.3–2.5 in simulation. The ATD is smoothed; our
+   simulated per-frame jitter had inflated every speed, and the dead-ball model had learned "everyone
+   slower than ~2 m/s means a stoppage". Fixes: player noise simulated as slow drift (speeds now
+   1.55–1.78 m/s, the clean sample games' own 1.54–1.77), and every tempo feature made *relative to
+   the half's median*, so no tracker's smoothing can move it again. Verified on the sample games:
+   the predicted dead share is now the same (0.40–0.42, truth 0.45) with clean, drifting or jittery
+   players. Second run: dead share 0.405, public-window check passed.
+2. **Ball offset.** The report then showed the ball sitting farther from the nearest player on
+   BAR-ATH (median 1.92 m) than anywhere in the simulation (1.1–1.8 m): single-camera ball tracking
+   has slowly varying offsets (lofted balls projected to the ground, feet hiding the ball) that do
+   not average out. We added exactly that error to the simulation (re-drawn every second,
+   interpolated), sized so the simulated range (1.14–1.96 m) covers BAR-ATH's, and retrained. The
+   real run sits closest to the *heavy* setting on every noise statistic.
+3. **Tried and rejected: per-match calibration of the switch cost.** On BAR-ATH the decoder agreed
+   with the ownership model less often (0.947) than in simulation (0.96–0.98), suggesting the switch
+   cost was too high for the real evidence. We tried setting it per match so that agreement matched
+   the simulation — label-free, so allowed — and measured it on the sample games first: neutral to
+   negative (0.582 → 0.572–0.581), with erratic scales. Not shipped.
+
+The public 5 minutes were used only as the alignment check they are meant to be (a score near 0
+would mean misaligned frames or swapped teams); no version was chosen by it.
+
+## 8. Reproduction
 
 ```bash
 git clone <this repository> && cd <it>

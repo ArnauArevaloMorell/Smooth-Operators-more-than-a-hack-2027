@@ -141,3 +141,4 @@ def tag_prior_from_setpieces(set_pieces, F, p, T, fps):
             other = decode.A if team == 0 else decode.H
             prior[r:hi, other] -= p["w_tag_team"]
     return prior
+

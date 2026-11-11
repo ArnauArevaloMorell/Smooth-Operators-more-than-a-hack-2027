@@ -14,14 +14,14 @@ from . import features
 # Home share is a property of the match, not of the pipeline, so it has no range.
 REFERENCE = {
     "ball visible, graded frames": (0.446, 0.716),
-    "tracked players per graded frame": (19.85, 21.153),
-    "clear control episodes, share of graded frames": (0.151, 0.254),
-    "median ball-to-nearest-player distance (m)": (1.105, 1.81),
-    "median mean player speed (m/s)": (1.546, 1.786),
-    "predicted dead-ball share": (0.344, 0.43),
-    "possessions per minute": (2.259, 2.807),
-    "mean possession length (s)": (13.556, 15.516),
-    "decoded team agrees with ownership model": (0.96, 0.978),
+    "tracked players per graded frame": (19.853, 21.159),
+    "clear control episodes, share of graded frames": (0.093, 0.258),
+    "median ball-to-nearest-player distance (m)": (1.135, 1.956),
+    "median mean player speed (m/s)": (1.55, 1.784),
+    "predicted dead-ball share": (0.341, 0.43),
+    "possessions per minute": (2.249, 2.691),
+    "mean possession length (s)": (13.59, 15.795),
+    "decoded team agrees with ownership model": (0.954, 0.98),
 }
 
 
