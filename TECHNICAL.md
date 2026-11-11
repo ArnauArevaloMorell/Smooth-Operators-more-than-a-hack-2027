@@ -232,14 +232,15 @@ Held out (leave-one-group-out), official `possession_metrics.py`, final simulati
 
 | held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.739 / 0.933** |
-| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.712 / 0.921** |
-| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.670 / 0.904** |
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.769** (0.739 before swap training) |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.730** (0.712) |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.698** (0.670) |
 | DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
-(spellF1 / macroF1.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
+(spellF1 / macroF1; the final column is spellF1 with the shipped network recipe, held out on
+the Metrica folds.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
 published BAR-ATH full-match score (0.243 / 0.672), so the simulation is a faithful stand-in; the
-heavy Metrica row, **~0.67 spellF1**, is our best estimate of the full-match result.
+heavy Metrica row, **~0.70 spellF1**, is our best estimate of the full-match result.
 
 How the score was built (held out; each row on the simulation as it stood at that step):
 
