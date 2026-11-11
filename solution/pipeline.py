@@ -27,7 +27,17 @@ def load_params(path=PARAMS_PATH):
         return json.load(handle)
 
 
-def prepare(ball, xy, team, pitch, fps, blocks, models):
+def swapped_design(ball, xy, team, pitch, fps, blocks):
+    """The network's input with the two teams' roles swapped (for the test-time team swap)."""
+    team_sw = (1 - np.asarray(team)).astype(np.int8)
+    Fs = features.compute(ball, xy, team_sw, pitch, fps, blocks)
+    Xd, _ = features.dead_design(Fs, pitch, fps, blocks)
+    Xo = features.owner_design(Fs, fps, blocks)
+    Xh = features.hazard_design(Fs, fps, blocks)
+    return seqnet.design(Xd, Xo, Xh)
+
+
+def prepare(ball, xy, team, pitch, fps, blocks, models, params=None):
     """Everything that does not depend on decoder params: features and the two logits."""
     F = features.compute(ball, xy, team, pitch, fps, blocks)
     Xd, _ = features.dead_design(F, pitch, fps, blocks)
@@ -42,7 +52,10 @@ def prepare(ball, xy, team, pitch, fps, blocks, models):
         F["hazard_logit"] = logreg.logit(models["hazard"], Xh)
     net = seqnet.load()
     if net is not None:
-        F["seq_lp"] = seqnet.log_probs(net, seqnet.design(Xd, Xo, Xh), blocks)
+        X_sw = None
+        if params is not None and params.get("seq_team_swap"):
+            X_sw = swapped_design(ball, xy, team, pitch, fps, blocks)
+        F["seq_lp"] = seqnet.log_probs(net, seqnet.design(Xd, Xo, Xh), blocks, X_sw)
     return F
 
 

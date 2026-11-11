@@ -79,10 +79,13 @@ def forward(net, X, prenormalised=False):
     return _conv(x, net["head_w"], net["head_b"]).T
 
 
-def log_probs(nets, X_full, blocks):
+def log_probs(nets, X_full, blocks, X_swapped=None):
     """Per-frame (T, 3) log-probabilities over the full timeline; NaN outside blocks.
 
     nets: one weight dict, or a list of them -- an ensemble, whose probabilities are averaged.
+    X_swapped: the same match's features computed with the two teams' roles swapped. If given,
+    each network also reads that view and its home/away outputs are swapped back before averaging
+    (test-time team swap: any residual bias toward one side cancels out).
     """
     if isinstance(nets, dict):
         nets = [nets]
@@ -98,14 +101,19 @@ def log_probs(nets, X_full, blocks):
         if len(idx) < 2:
             continue
         prob = 0.0
+        n_views = 0
+        views = [(X_full, False)] + ([(X_swapped, True)] if X_swapped is not None else [])
         for net in nets:
-            if int(net.get("permatch", 0)):
-                z = forward(net, (X_full[idx] - m_mean) / m_std, prenormalised=True)
-            else:
-                z = forward(net, X_full[idx])
-            z = z - z.max(axis=1, keepdims=True)
-            prob = prob + np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
-        lp = np.log(prob / len(nets))
+            for X_view, swapped in views:
+                if int(net.get("permatch", 0)):
+                    z = forward(net, (X_view[idx] - m_mean) / m_std, prenormalised=True)
+                else:
+                    z = forward(net, X_view[idx])
+                z = z - z.max(axis=1, keepdims=True)
+                p = np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
+                prob = prob + (p[:, [1, 0, 2]] if swapped else p)
+                n_views += 1
+        lp = np.log(prob / n_views)
         frames = np.arange(s, e)
         for k in range(3):
             out[s:e, k] = np.interp(frames, idx, lp[:, k])

@@ -40,6 +40,8 @@ for case in [c for c in hz.CASES if c[0] in hz.METRICA_GAMES]:
         prior = pipeline.tag_prior_from_setpieces(tags, G, P, len(labels), 25)
         res.append(hz.score(labels, pipeline.predict(G, blocks, P, prior))["spell_f1_mean"])
     rows.append((case, res[0], res[1]))
+    np.save(os.path.join(hz.CACHE_DIR, "seqlp%sT_%d_%s_%d.npy" % ((TAG,) + case)),
+            frame_lp([(a + b) / 2 for a, b in zip(normal, flipped)], blocks, len(labels)).astype(np.float32))
     print(case, "plain %.4f  tta %.4f" % (res[0], res[1]), flush=True)
 for s in ("light", "medium", "heavy"):
     r = [x for x in rows if x[0][1] == s]

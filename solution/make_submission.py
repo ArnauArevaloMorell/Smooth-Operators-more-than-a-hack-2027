@@ -83,7 +83,7 @@ def build(data_dir=None, use_tags=True, params_path=pipeline.PARAMS_PATH, verbos
           "ball visible on {:.1%} of graded frames (DATA.md says 59.3%)".format(vis_g))
     models = logreg.load(pipeline.MODELS_PATH)
     p = pipeline.load_params(params_path)
-    F = pipeline.prepare(ball, xy, tr.team, g["pitch"], g["fps"], blocks, models)
+    F = pipeline.prepare(ball, xy, tr.team, g["pitch"], g["fps"], blocks, models, p)
 
     prior = np.zeros((n, 4))
     phases = None
