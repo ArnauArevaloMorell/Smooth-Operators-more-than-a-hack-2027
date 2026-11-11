@@ -46,9 +46,16 @@ def _gap_quantiles():
 SETTINGS = {
     # alive_missing: target share of live frames with no ball; dead_visible: share of dead
     # stretches where the ball is seen being carried to the restart.
-    "light": dict(alive_missing=0.15, dead_visible=0.5, ball_noise=0.25, player_drop=0.04),
-    "medium": dict(alive_missing=0.25, dead_visible=0.4, ball_noise=0.35, player_drop=0.07),
-    "heavy": dict(alive_missing=0.35, dead_visible=0.3, ball_noise=0.5, player_drop=0.10),
+    # ball_offset: a slowly varying bias (redrawn every second, interpolated), the kind of error a
+    # single-camera ball tracker makes -- a lofted ball projected to the ground, a ball partly
+    # hidden by feet. It does not average out over frames. Sized so the median ball-to-nearest-
+    # player distance spans BAR-ATH's (1.92 m, from the run's health report).
+    "light": dict(alive_missing=0.15, dead_visible=0.5, ball_noise=0.25, ball_offset=0.4,
+                  player_drop=0.04),
+    "medium": dict(alive_missing=0.25, dead_visible=0.4, ball_noise=0.35, ball_offset=0.8,
+                   player_drop=0.07),
+    "heavy": dict(alive_missing=0.35, dead_visible=0.3, ball_noise=0.5, ball_offset=1.2,
+                  player_drop=0.10),
 }
 
 
@@ -102,6 +109,12 @@ def degrade(game, setting="medium", seed=0):
 
     # 3. Noise.
     n = rng.normal(0, cfg["ball_noise"], size=ball.shape)
+    off = cfg.get("ball_offset", 0.0)
+    if off:
+        knots = rng.normal(0, off / np.sqrt(2), size=(T // 25 + 2, 2))
+        u = (np.arange(T) % 25 / 25.0)[:, None]
+        i = np.arange(T) // 25
+        n = n + knots[i] * (1 - u) + knots[i + 1] * u
     ball[:, 0] += n[:, 0] / L
     ball[:, 1] += n[:, 1] / W
     # Player noise is a slow drift, not per-frame jitter: the real ATD is smoothed (median mean

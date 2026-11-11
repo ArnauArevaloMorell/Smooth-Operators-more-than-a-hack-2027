@@ -211,9 +211,10 @@ def load_cached(meta_path, raw_path, cache_dir):
         if cache_dir else None
     if cache and os.path.isfile(cache):
         z = np.load(cache, allow_pickle=False)
-        return Tracking(z["frame_id"], z["ball"], z["ball_extra"], list(z["ball_channels"]),
-                        z["xy"], z["extra"], list(z["player_channels"]), z["team"],
-                        list(z["team_names"]), int(z["fps"]))
+        return Tracking(z["frame_id"], z["ball"], z["ball_extra"],
+                        [str(c) for c in z["ball_channels"]], z["xy"], z["extra"],
+                        [str(c) for c in z["player_channels"]], z["team"],
+                        [str(c) for c in z["team_names"]], int(z["fps"]))
     tr = load_epts(meta_path, raw_path)
     if cache:
         np.savez(cache, frame_id=tr.frame_id, ball=tr.ball, ball_extra=tr.ball_extra,
