@@ -35,8 +35,12 @@ def transition_matrix(p):
     return C
 
 
-def viterbi(E, C, init=None):
-    """Best state path for emissions E (T, 4) and costs C (4, 4)."""
+def viterbi(E, C, init=None, switch_cost=None):
+    """Best state path for emissions E (T, 4) and costs C (4, 4).
+
+    switch_cost, if given, is a per-frame H<->A cost (T,) replacing C[H, A] and C[A, H]: the cost
+    of a possession changing hands *into* frame t.
+    """
     T = E.shape[0]
     score = -C.T  # score[to, from]
     back = np.zeros((T, 4), dtype=np.int8)
@@ -46,8 +50,11 @@ def viterbi(E, C, init=None):
     vv = [float(x) for x in v]
     El = E.tolist()
     bk = []
+    sw = switch_cost.tolist() if switch_cost is not None else None
     for t in range(1, T):
         e = El[t]
+        if sw is not None:
+            sc[H][A] = sc[A][H] = -sw[t]
         nv = [0.0] * 4
         b = [0] * 4
         for j in range(4):

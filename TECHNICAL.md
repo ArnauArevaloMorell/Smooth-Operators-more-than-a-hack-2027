@@ -94,8 +94,11 @@ comes from:
   false positives; phases as jittered (±2 s) sub-intervals of 60% of possessions longer than 3 s,
   with the wrong team 15% of the time.
 
-Evaluation is **leave-one-game-out**: the models scoring game *g* never saw game *g*. The shipped
-models (`solution/models.json`) are then trained on all three.
+Evaluation is **leave-one-game-out**: the models scoring game *g* never saw game *g*. Each game
+is degraded six times (light / medium / heavy, two independent random draws each), so every
+reported number and every tuning decision is an average over **18 cases** — a constant is only
+kept if it helps across noise realisations, not on one lucky draw. The shipped models
+(`solution/models.json`) are then trained on all of them.
 
 ## 5. The method in detail
 
@@ -135,15 +138,23 @@ halftime.
   ~0.90–0.92 on live frames, under degradation.
 * **Shape-only:** logistic regression on shape alone (held-out ~0.87 with no ball at all) — kept
   for the decoder to fall back on in ball gaps.
+* **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
+  from the contrast between the last half-second and the next (control by each side, the last and
+  next controlling team), from signs of a contest (both sides within 3 m of the ball) and from
+  abrupt changes of ball velocity (a touch). It does not say *who* gets the ball — the ownership
+  model does — only *where* a change is plausible.
 
 ### 5.3 Decoder (`solution/decode.py`, `solution/pipeline.py`)
 
 Per frame, emissions for the four states: the two team states get `±½ · (w_c·(c_H − c_A) +
 w_o·owner_logit + w_s·shape_logit)`, the two dead states get `w_d·(dead_logit + b)`, plus Smart
-Tagging priors. Transition costs: `switch` for H↔A, `die` for alive→dead, `restart` for
-dead→alive, plus `restart_same` when play restarts with the side that had the ball before the
-stoppage (tuned: restarts more often go to the other side — throw-ins, goal kicks). Exact Viterbi
-per half; frames outside the halves are `X` (never scored).
+Tagging priors. Transition costs: `die` for alive→dead, `restart` for dead→alive, plus
+`restart_same` when play restarts with the side that had the ball before the stoppage (tuned:
+restarts more often go to the other side — throw-ins, goal kicks). The H↔A cost is **per frame**:
+`switch · exp(−w_h · clip(hazard_logit + b_h))` — cheap where the hazard model sees a contest or a
+touch, dearer where nothing is happening. A constant cost has to compromise between missing the
+short possessions and inventing ones mid-possession; a per-frame cost does not. Exact Viterbi per
+half; frames outside the halves are `X` (never scored).
 
 **Smart Tagging priors.** For each tagged set piece, the restart instant is where the ball first
 moves faster than 6 m/s inside the window (else the window centre); before it the dead states get
@@ -221,6 +232,12 @@ python -m solution.make_submission --team <team_name>
 python evaluation/validate_submission.py evaluation/results/<team_name>.csv
 python evaluation/run_evaluation.py                 # public 5 minutes: a correctness check only
 ```
+
+`make_submission` also prints a **health report**: aggregate statistics of the run (ball
+visibility, tracked players, share of frames with a clear controller, dead-ball share, possessions
+per minute, …) next to the range each took on the 18 sample-game cases, flagging anything outside
+it — the first place to look if the real tracking differs from our simulation of it — and the
+public-window scores as an alignment check.
 
 Deterministic: same inputs → the same file, byte for byte (checked with and without the parse
 cache). The models and constants are committed (`solution/models.json`, `solution/params.json`).

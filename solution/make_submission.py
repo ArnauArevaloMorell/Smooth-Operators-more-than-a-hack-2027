@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(ROOT, "evaluation"))
 
 import games  # noqa: E402
 import possession_metrics as pm  # noqa: E402
-from solution import epts, logreg, pipeline, tagging  # noqa: E402
+from solution import epts, logreg, pipeline, report, tagging  # noqa: E402
 
 LETTERS = np.array(["H", "A", "D", "X"])
 
@@ -80,7 +80,25 @@ def build(data_dir=None, use_tags=True, params_path=pipeline.PARAMS_PATH, verbos
     codes = pipeline.predict(F, blocks, p, prior)
     if verbose:
         print("decoded in {:.0f}s".format(time.time() - t0))
+        report.print_report(F, codes, blocks, g["fps"])
     return codes
+
+
+def public_window_check(path):
+    """Score against the public 5 minutes -- a correctness check (alignment, label meaning),
+    never a tuning signal: RULES.md, and 17 possessions cannot rank anything anyway."""
+    gt_paths = [os.path.join(ROOT, "evaluation", "gt", f)
+                for f in os.listdir(os.path.join(ROOT, "evaluation", "gt"))
+                if f.endswith("_possession_gt_public.csv")]
+    if not gt_paths:
+        return
+    gt = pm.label_codes(pm.read_label_csv(gt_paths[0]))
+    r = pm.evaluate(gt, pm.label_codes(pm.read_label_csv(path)))
+    print("\npublic 5-minute window (correctness check only): spellF1 {:.4f}  macroF1 {:.4f}  "
+          "possessions {} vs {} in the truth".format(r["spell_f1_mean"], r["macro_f1"],
+                                                    r["n_pred_spells"], r["n_gt_spells"]))
+    print("  baselines there: smooth50 spellF1 0.3256 / macroF1 0.6207. Far below that means "
+          "something is misaligned or swapped -- stop and investigate.")
 
 
 def write(codes, path):
@@ -116,6 +134,7 @@ def main():
     print("wrote {}  (valid)  {} possessions, mean {:.1f}s, home share {:.1%}".format(
         os.path.relpath(path, ROOT), st["n_spells"], st["mean_duration_s"], st["home_share"]))
     print("sha256 {}".format(hashlib.sha256(open(path, "rb").read()).hexdigest()))
+    public_window_check(path)
 
 
 if __name__ == "__main__":

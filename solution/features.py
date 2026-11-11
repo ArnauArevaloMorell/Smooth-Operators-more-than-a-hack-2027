@@ -394,3 +394,48 @@ def shape_design(F, fps, blocks):
             cols.append(_block_apply(lambda v: window_mean(v, sec * fps), F[key], blocks, T))
     X = np.nan_to_num(np.column_stack(cols), nan=0.0)
     return X, names
+
+
+def hazard_design(F, fps, blocks):
+    """Matrix for the 'possession changes hands around here' model.
+
+    Contrasts what came just before with what comes just after (control by each side, the last and
+    next controlling team), and the local signs of a contest: both sides close to the ball, the
+    ball changing direction or speed abruptly.
+    """
+    T = len(F["vis"])
+    cols = []
+    for sigma in (1.0, 2.0):
+        cH, cA = control_kernel(F, sigma)
+        diff = cH - cA
+        for k in (6, 12, 25):
+            past = _block_apply(lambda v: window_mean_dir(v, k, 0), diff, blocks, T)
+            fut = _block_apply(lambda v: window_mean_dir(v, 0, k), diff, blocks, T)
+            past, fut = np.nan_to_num(past), np.nan_to_num(fut)
+            cols += [past, fut, past * fut, np.abs(past - fut)]
+    last, nxt, l2, n2, l10, n10, ep, ln, lsince, luntil = controller_features(F, fps, blocks)
+    cols += [last, nxt, last * nxt, l2 * n2, lsince, luntil, ep]
+    dH = np.nan_to_num(F["dH"], nan=30.0)
+    dA = np.nan_to_num(F["dA"], nan=30.0)
+    both = ((dH < 3.0) & (dA < 3.0)).astype(float)
+    cols += [_block_apply(lambda v: window_mean(v, 12), both, blocks, T),
+             np.minimum(np.maximum(dH, dA), 30.0), np.minimum(np.minimum(dH, dA), 30.0)]
+    # abrupt change of ball velocity (a touch), from the smoothed track
+    bx, by = F["bx"], F["by"]
+    acc = np.full(T, np.nan)
+    for s, e in blocks:
+        x, y = bx[s:e], by[s:e]
+        n = e - s
+        if n < 13:
+            continue
+        vx = np.full(n, np.nan)
+        vy = np.full(n, np.nan)
+        vx[3:-3] = (x[6:] - x[:-6]) * fps / 6.0
+        vy[3:-3] = (y[6:] - y[:-6]) * fps / 6.0
+        a = np.full(n, np.nan)
+        a[3:-3] = np.hypot(vx[6:] - vx[:-6], vy[6:] - vy[:-6])
+        acc[s:e] = np.minimum(a, 40.0)
+    accw = _block_apply(lambda v: window_mean(v, 6), acc, blocks, T)
+    cols += [np.nan_to_num(acc), np.nan_to_num(accw), (~np.isfinite(acc)).astype(float),
+             _block_apply(lambda v: window_mean(v, 25), F["vis"], blocks, T)]
+    return np.nan_to_num(np.column_stack(cols), nan=0.0)

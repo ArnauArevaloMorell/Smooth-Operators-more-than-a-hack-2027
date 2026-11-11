@@ -24,7 +24,12 @@ from solution import features, logreg, pipeline  # noqa: E402
 
 CACHE_DIR = os.path.join(ROOT, "data", "cache", "dev")
 GAMES = (1, 2, 3)
-CASES = [(g, s, seed) for g in GAMES for s, seed in (("light", 0), ("medium", 1), ("heavy", 2))]
+# Two independent degradation draws per strength: tuning averages over 18 cases, so a parameter
+# is only kept if it helps across noise realisations, not on one lucky draw.
+CASES = [(g, s, seed) for g in GAMES
+         for s, seed in (("light", 0), ("medium", 1), ("heavy", 2),
+                         ("light", 10), ("medium", 11), ("heavy", 12))]
+HAZARD_RADIUS = 5
 
 
 def blocks_of(labels):
@@ -102,6 +107,22 @@ def case_data(game_n, setting, seed):
     return out
 
 
+def hazard_data(case):
+    """(Xh, y): hazard design and 'a possession changes hands within +/-5 frames' target."""
+    path = os.path.join(CACHE_DIR, "haz_%d_%s_%d.npy" % case)
+    F, Xd, Xs, labels, blocks, tags, Xo = case_data(*case)
+    if os.path.isfile(path):
+        Xh = np.load(path)
+    else:
+        Xh = features.hazard_design(F, 25, blocks).astype(np.float32)
+        np.save(path, Xh)
+    y = np.zeros(len(labels))
+    for f, a, b in pm.transitions(labels, pm.valid_runs(labels)):
+        if a < 2 and b < 2:
+            y[max(0, f - HAZARD_RADIUS):f + HAZARD_RADIUS + 1] = 1
+    return Xh, y
+
+
 def graded_mask(labels):
     return labels != pm.X
 
@@ -124,7 +145,15 @@ def train(cases, subsample=3):
     ys = np.concatenate(ys_all)
     shape = logreg.fit(np.vstack(Xs_all).astype(np.float64), ys, l2=10.0)
     owner = logreg.fit(np.vstack(Xo_all).astype(np.float64), ys, l2=10.0)
-    return {"dead": dead, "shape": shape, "owner": owner}
+    Xh_all, yh_all = [], []
+    for c in cases:
+        labels = case_data(*c)[3]
+        Xh, yh = hazard_data(c)
+        idx = np.flatnonzero(labels < 2)[::2 * subsample // 3 or 1]
+        Xh_all.append(Xh[idx])
+        yh_all.append(yh[idx])
+    hazard = mlp.fit(np.vstack(Xh_all), np.concatenate(yh_all), hidden=32, epochs=6, seed=0)
+    return {"dead": dead, "shape": shape, "owner": owner, "hazard": hazard}
 
 
 _LOGITS = {}
@@ -140,6 +169,8 @@ def attach_logits(case, models):
         F["shape_logit"] = logreg.logit(models["shape"], Xs.astype(np.float64))
         F["owner_logit"] = logreg.logit(models["owner"], Xo.astype(np.float64))
         F["episode"] = features.control_episodes(F, blocks).astype(np.float64)
+        if "hazard" in models:
+            F["hazard_logit"] = logreg.logit(models["hazard"], hazard_data(case)[0])
         _LOGITS[key] = (F, labels, blocks, tags)
     return _LOGITS[key]
 

@@ -37,6 +37,8 @@ def prepare(ball, xy, team, pitch, fps, blocks, models):
     F["shape_logit"] = logreg.logit(models["shape"], Xs)
     F["owner_logit"] = logreg.logit(models["owner"], Xo)
     F["episode"] = features.control_episodes(F, blocks).astype(np.float64)
+    if "hazard" in models:
+        F["hazard_logit"] = logreg.logit(models["hazard"], features.hazard_design(F, fps, blocks))
     return F
 
 
@@ -75,12 +77,24 @@ def emissions(F, p, tag_prior=None):
     return E
 
 
-def decode_blocks(E, blocks, p, T):
+def switch_costs(F, p):
+    """Per-frame cost of a possession changing hands, or None for the constant cost.
+
+    cost_t = switch * exp(-w_hazard * clip(hazard_logit_t + hazard_bias)): cheap where the hazard
+    model sees a contest or a touch by the other side, dearer where nothing is happening.
+    """
+    if not p.get("w_hazard") or "hazard_logit" not in F:
+        return None
+    z = np.clip(np.nan_to_num(F["hazard_logit"]) + p.get("hazard_bias", 0.0), -3.0, 6.0)
+    return p["switch"] * np.exp(-p["w_hazard"] * z)
+
+
+def decode_blocks(E, blocks, p, T, sw=None):
     """Viterbi per graded block; everything outside the blocks is X (code 3)."""
     C = decode.transition_matrix(p)
     labels = np.full(T, 3, dtype=np.int8)
     for s, e in blocks:
-        path = decode.viterbi(E[s:e], C)
+        path = decode.viterbi(E[s:e], C, switch_cost=None if sw is None else sw[s:e])
         labels[s:e] = decode.to_labels(path)
     return labels
 
@@ -88,7 +102,7 @@ def decode_blocks(E, blocks, p, T):
 def predict(F, blocks, p, tag_prior=None):
     T = len(F["vis"])
     E = emissions(F, p, tag_prior)
-    return decode_blocks(E, blocks, p, T)
+    return decode_blocks(E, blocks, p, T, switch_costs(F, p))
 
 
 # -- Smart Tagging as a prior ------------------------------------------------------------------
