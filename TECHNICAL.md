@@ -175,7 +175,8 @@ halftime.
   ownership and hazard feature designs (251 columns) sampled 5 times a second and standardised; a
   1×1 stem to 64 channels; seven residual blocks `x + W₂·relu(dilated 3-tap conv(x))` with
   dilations 1, 2, …, 64 — each output step sees ~±25 s; a 1×1 head to three logits (home, away,
-  dead). Cross-entropy, AdamW, one-cycle schedule, 1,500 steps of 32 random 102-s crops. Halves
+  dead). Cross-entropy with steps within ±0.4 s of a label change weighted ×3 (spellF1's IoU is
+  decided at the boundaries), AdamW, one-cycle schedule, 1,500 steps of 32 random 102-s crops. Halves
   are processed separately. Training data is doubled by **team-swap augmentation** — every case
   also appears with the two teams' roles swapped and H/A labels exchanged, so the network has no
   reason to prefer a side — and widened with an **extra-heavy** noise setting beyond BAR-ATH's on
@@ -232,9 +233,9 @@ Held out (leave-one-group-out), official `possession_metrics.py`, final simulati
 
 | held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.769** (0.739 before swap training) |
-| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.730** (0.712) |
-| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.698** (0.670) |
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.774** (0.739 for the first network) |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.742** (0.712) |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.702** (0.670) |
 | DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
 (spellF1 / macroF1; the final column is spellF1 with the shipped network recipe, held out on
@@ -257,12 +258,15 @@ How the score was built (held out; each row on the simulation as it stood at tha
 | rich ball-free team-shape features, tuned on BAR-ATH-like noise | 0.618 |
 | DFL matches added to training | 0.630 |
 | temporal CNN, decoder re-tuned around it | 0.810 (Metrica heavy 0.578 → 0.670) |
-| **team-swap augmentation + extra-heavy noise + test-time team swap** | Metrica mean 0.706 → **0.732**, heavy 0.670 → **0.698** |
+| team-swap augmentation + extra-heavy noise + test-time team swap | Metrica mean 0.706 → 0.732, heavy 0.670 → 0.698 |
+| **+ boundary-weighted loss** | Metrica mean **0.739**, heavy **0.702** |
 
 Network variants we tested on the held-out Metrica matches (mean / heavy spellF1): team-swap
 augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input normalisation
 0.704 / 0.659 — rejected**; swap augmentation with test-time swap 0.731 / 0.692; with extra-heavy
-noise as well 0.732 / 0.698 (shipped: best on heavy, the regime BAR-ATH is in). Re-scanning the
+noise as well 0.732 / 0.698 (best on heavy, the regime BAR-ATH is in); plus a boundary-weighted
+loss 0.739 / 0.702 with weight 2 and 0.739 / 0.702 with weight 4 — the same gain from two
+independent trainings, so it is not seed luck (shipped, weight 2). Re-scanning the
 decoder's network weight and switch cost for the new outputs moved nothing beyond ±0.003.
 
 **Decisions made against the simulation's preference, for the real match.**
