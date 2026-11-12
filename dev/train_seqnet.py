@@ -221,6 +221,7 @@ def export(net, mean, std, permatch=False):
 
 
 def main():
+    global C
     ap = argparse.ArgumentParser()
     ap.add_argument("--logo", action="store_true")
     ap.add_argument("--final", action="store_true")
@@ -239,9 +240,11 @@ def main():
     ap.add_argument("--tag", default="", help="output prefix for --logo variants")
     ap.add_argument("--metrica-folds", action="store_true", help="--logo on the Metrica folds only")
     ap.add_argument("--dfl-folds", action="store_true", help="--logo on the DFL folds only")
+    ap.add_argument("--channels", type=int, default=C, help="network width")
     ap.add_argument("--metrica-only", action="store_true",
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
+    C = a.channels
     torch.set_num_threads(4)
     for c in hz.CASES:
         case_seq(c)
