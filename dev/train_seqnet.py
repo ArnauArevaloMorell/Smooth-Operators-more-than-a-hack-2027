@@ -82,10 +82,18 @@ def seq_direct(game_n, setting, seed, flip=False):
     return out
 
 
-def training_seqs(cases, flip=False, xheavy=False):
+MORE = (("light", 40), ("medium", 41), ("heavy", 42))   # extra DFL draws for --more
+
+
+def training_seqs(cases, flip=False, xheavy=False, more=False):
     """[(X, y, case_key)] for training: the cases, plus their flipped and extra-heavy versions."""
     out = [(x, y, c) for c in cases for x, y in case_seq(c)]
     games = sorted(set(c[0] for c in cases))
+    if more:
+        extra = [(g, st, sd) for g in games if g in hz.DFL_GAMES for st, sd in MORE]
+        out += [(x, y, c) for c in extra for x, y in seq_direct(*c)]
+        if flip:
+            out += [(x, y, c + ("flip",)) for c in extra for x, y in seq_direct(*c, flip=True)]
     if flip:
         out += [(x, y, c + ("flip",)) for c in cases for x, y in seq_direct(*c, flip=True)]
     if xheavy:
@@ -97,11 +105,12 @@ def training_seqs(cases, flip=False, xheavy=False):
 
 
 class Net(nn.Module):
-    def __init__(self, d_in):
+    def __init__(self, d_in, dilations=DILATIONS):
         super().__init__()
+        self.dilations = tuple(dilations)
         self.stem = nn.Conv1d(d_in, C, 1)
-        self.c1 = nn.ModuleList([nn.Conv1d(C, C, 3, dilation=d, padding=d) for d in DILATIONS])
-        self.c2 = nn.ModuleList([nn.Conv1d(C, C, 1) for _ in DILATIONS])
+        self.c1 = nn.ModuleList([nn.Conv1d(C, C, 3, dilation=d, padding=d) for d in self.dilations])
+        self.c2 = nn.ModuleList([nn.Conv1d(C, C, 1) for _ in self.dilations])
         self.drop = nn.Dropout(0.1)
         self.head = nn.Conv1d(C, 3, 1)
 
@@ -122,10 +131,10 @@ def boundary_weights(y, radius=2, weight=2.0):
 
 
 def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, permatch=False,
-          boundary=0.0):
+          boundary=0.0, more=False, dilations=DILATIONS):
     torch.manual_seed(seed)
     rng = np.random.RandomState(seed)
-    triples = training_seqs(cases, flip=flip, xheavy=xheavy)
+    triples = training_seqs(cases, flip=flip, xheavy=xheavy, more=more)
     allX = np.vstack([x for x, _, _ in triples])
     mean = allX.mean(axis=0)
     std = allX.std(axis=0) + 1e-6
@@ -142,7 +151,7 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
     wts = [boundary_weights(y, weight=boundary) if boundary else np.ones(len(y), np.float32)
            for _, y in seqs]
     lengths = np.array([len(y) for _, y in seqs], dtype=float)
-    net = Net(allX.shape[1])
+    net = Net(allX.shape[1], dilations)
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=LR, total_steps=steps, pct_start=0.1)
     lossf = nn.CrossEntropyLoss(ignore_index=3, reduction="none")
@@ -179,7 +188,7 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
 
 def export(net, mean, std, permatch=False):
     w = {"mean": mean.astype(np.float64), "std": std.astype(np.float64),
-         "n_blocks": np.array(len(DILATIONS)), "dilations": np.array(DILATIONS),
+         "n_blocks": np.array(len(net.dilations)), "dilations": np.array(net.dilations),
          "permatch": np.array(int(permatch)),
          "stem_w": net.stem.weight.detach().double().numpy(),
          "stem_b": net.stem.bias.detach().double().numpy(),
@@ -208,6 +217,8 @@ def main():
     ap.add_argument("--flip", action="store_true", help="add team-swapped copies of the training data")
     ap.add_argument("--xheavy", action="store_true", help="add extra-heavy-noise training cases")
     ap.add_argument("--permatch", action="store_true", help="per-match input normalisation")
+    ap.add_argument("--more", action="store_true", help="three extra noise draws per DFL match")
+    ap.add_argument("--dilations", type=int, nargs="+", default=list(DILATIONS))
     ap.add_argument("--boundary", type=float, default=0.0,
                     help="extra loss weight near label changes (0 = plain cross-entropy)")
     ap.add_argument("--tag", default="", help="output prefix for --logo variants")
@@ -227,7 +238,7 @@ def main():
                            (not a.metrica_only or c[0] in hz.METRICA_GAMES)]
             print("fold", f, "training on", len(train_cases), "cases", flush=True)
             w = train(train_cases, steps=a.steps, flip=a.flip, xheavy=a.xheavy, permatch=a.permatch,
-                      boundary=a.boundary)
+                      boundary=a.boundary, more=a.more, dilations=a.dilations)
             np.savez(os.path.join(hz.CACHE_DIR, "seqnet%s_fold_%s.npz" % (a.tag, f)), **w)
             for c in hz.CASES:
                 if hz.fold_of(c[0]) != f:
@@ -243,7 +254,8 @@ def main():
         for seed in range(a.seeds):
             print("final network, seed", seed, flush=True)
             nets.append(train(hz.CASES, seed=seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
-                              permatch=a.permatch, boundary=a.boundary))
+                              permatch=a.permatch, boundary=a.boundary, more=a.more,
+                              dilations=a.dilations))
             seqnet.save(nets)          # saved after each member, so a partial ensemble is usable
         print("wrote", seqnet.WEIGHTS_PATH, "with", len(nets), "networks")
 
