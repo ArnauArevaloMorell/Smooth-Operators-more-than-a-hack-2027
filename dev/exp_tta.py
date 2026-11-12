@@ -8,6 +8,7 @@ from solution import pipeline, seqnet
 
 P = json.load(open(os.path.join(hz.ROOT, "solution", "params.json")))
 TAG = sys.argv[1] if len(sys.argv) > 1 else ""
+GROUP = hz.DFL_GAMES if (len(sys.argv) > 2 and sys.argv[2] == "dfl") else hz.METRICA_GAMES
 
 
 def frame_lp(step_probs, blocks, T):
@@ -26,7 +27,7 @@ def softmax(z):
 
 
 rows = []
-for case in [c for c in hz.CASES if c[0] in hz.METRICA_GAMES]:
+for case in [c for c in hz.CASES if c[0] in GROUP]:
     net = dict(np.load(os.path.join(hz.CACHE_DIR, "seqnet%s_fold_%s.npz" % (TAG, hz.fold_of(case[0])))))
     F, labels, blocks, tags = hz.attach_logits(case, hz.logo_models()[case[0]])
     seqs = t.case_seq(case)

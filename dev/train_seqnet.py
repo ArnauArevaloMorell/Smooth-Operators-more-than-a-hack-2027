@@ -238,6 +238,7 @@ def main():
                     help="extra loss weight near label changes (0 = plain cross-entropy)")
     ap.add_argument("--tag", default="", help="output prefix for --logo variants")
     ap.add_argument("--metrica-folds", action="store_true", help="--logo on the Metrica folds only")
+    ap.add_argument("--dfl-folds", action="store_true", help="--logo on the DFL folds only")
     ap.add_argument("--metrica-only", action="store_true",
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
@@ -248,6 +249,8 @@ def main():
         folds = sorted(set(hz.fold_of(g) for g in hz.GAMES), key=str)
         if a.metrica_only or a.metrica_folds:
             folds = [f for f in folds if f in hz.METRICA_GAMES]
+        if a.dfl_folds:
+            folds = [f for f in folds if f not in hz.METRICA_GAMES]
         for f in folds:
             train_cases = [c for c in hz.CASES if hz.fold_of(c[0]) != f and
                            (not a.metrica_only or c[0] in hz.METRICA_GAMES)]
