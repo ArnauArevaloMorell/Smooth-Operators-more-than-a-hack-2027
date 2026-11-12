@@ -12,25 +12,25 @@ from . import features
 
 # filled from dev/crosscheck_ranges.py
 REFERENCE = {
-    "ball control (clear) vs decoded, ball seen": (0.946, 0.967),
+    "ball control (clear) vs decoded, ball seen": (0.943, 0.967),
     "ball control (clear) vs phase tags": (0.75, 0.855),
-    "ball control (clear) vs sequence net": (0.938, 0.962),
+    "ball control (clear) vs sequence net": (0.938, 0.964),
     "ownership model vs ball control (clear)": (0.95, 0.97),
-    "ownership model vs decoded, ball gap": (0.872, 0.929),
-    "ownership model vs decoded, ball seen": (0.94, 0.953),
-    "ownership model vs phase tags": (0.768, 0.854),
-    "ownership model vs sequence net": (0.912, 0.937),
+    "ownership model vs decoded, ball gap": (0.873, 0.93),
+    "ownership model vs decoded, ball seen": (0.939, 0.95),
+    "ownership model vs phase tags": (0.769, 0.854),
+    "ownership model vs sequence net": (0.91, 0.935),
     "ownership model vs shape model": (0.933, 0.95),
-    "phase tags vs decoded, ball gap": (0.761, 0.925),
-    "phase tags vs decoded, ball seen": (0.772, 0.863),
-    "sequence net vs decoded, ball gap": (0.978, 0.99),
+    "phase tags vs decoded, ball gap": (0.763, 0.922),
+    "phase tags vs decoded, ball seen": (0.773, 0.863),
+    "sequence net vs decoded, ball gap": (0.982, 0.993),
     "sequence net vs decoded, ball seen": (0.984, 0.996),
-    "sequence net vs phase tags": (0.775, 0.873),
+    "sequence net vs phase tags": (0.777, 0.872),
     "shape model vs ball control (clear)": (0.895, 0.919),
-    "shape model vs decoded, ball gap": (0.876, 0.957),
-    "shape model vs decoded, ball seen": (0.903, 0.923),
+    "shape model vs decoded, ball gap": (0.877, 0.961),
+    "shape model vs decoded, ball seen": (0.901, 0.921),
     "shape model vs phase tags": (0.779, 0.843),
-    "shape model vs sequence net": (0.9, 0.915),
+    "shape model vs sequence net": (0.899, 0.916),
 }
 
 
