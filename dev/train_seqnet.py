@@ -229,6 +229,7 @@ def main():
     ap.add_argument("--flip", action="store_true", help="add team-swapped copies of the training data")
     ap.add_argument("--xheavy", action="store_true", help="add extra-heavy-noise training cases")
     ap.add_argument("--permatch", action="store_true", help="per-match input normalisation")
+    ap.add_argument("--seed", type=int, default=0, help="training seed for --logo (seed-noise checks)")
     ap.add_argument("--more", action="store_true", help="three extra noise draws per DFL match")
     ap.add_argument("--more2", action="store_true",
                     help="--more plus three further draws per DFL match and three per Metrica match")
@@ -251,8 +252,9 @@ def main():
             train_cases = [c for c in hz.CASES if hz.fold_of(c[0]) != f and
                            (not a.metrica_only or c[0] in hz.METRICA_GAMES)]
             print("fold", f, "training on", len(train_cases), "cases", flush=True)
-            w = train(train_cases, steps=a.steps, flip=a.flip, xheavy=a.xheavy, permatch=a.permatch,
-                      boundary=a.boundary, more=a.more, dilations=a.dilations, more2=a.more2)
+            w = train(train_cases, seed=a.seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
+                      permatch=a.permatch, boundary=a.boundary, more=a.more,
+                      dilations=a.dilations, more2=a.more2)
             np.savez(os.path.join(hz.CACHE_DIR, "seqnet%s_fold_%s.npz" % (a.tag, f)), **w)
             for c in hz.CASES:
                 if hz.fold_of(c[0]) != f:
