@@ -135,9 +135,12 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
     torch.manual_seed(seed)
     rng = np.random.RandomState(seed)
     triples = training_seqs(cases, flip=flip, xheavy=xheavy, more=more)
-    allX = np.vstack([x for x, _, _ in triples])
-    mean = allX.mean(axis=0)
-    std = allX.std(axis=0) + 1e-6
+    # mean / std without stacking every sequence (memory: the data set is ~4 GB)
+    n = sum(len(x) for x, _, _ in triples)
+    mean = sum(x.sum(axis=0, dtype=np.float64) for x, _, _ in triples) / n
+    var = sum(((x - mean) ** 2).sum(axis=0) for x, _, _ in triples) / n
+    std = np.sqrt(var) + 1e-6
+    d_in = triples[0][0].shape[1]
     if permatch:
         # each (match, degradation, side) standardised by its own statistics, as at inference
         stats = {}
@@ -147,11 +150,15 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
                  for k, v in stats.items()}
         seqs = [(((x - stats[k][0]) / stats[k][1]).astype(np.float32), y) for x, y, k in triples]
     else:
-        seqs = [(((x - mean) / std).astype(np.float32), y) for x, y, _ in triples]
+        seqs = []
+        while triples:                      # normalise and drop the raw copy one at a time
+            x, y, _ = triples.pop()
+            seqs.append((((x - mean) / std).astype(np.float32), y))
+        seqs.reverse()
     wts = [boundary_weights(y, weight=boundary) if boundary else np.ones(len(y), np.float32)
            for _, y in seqs]
     lengths = np.array([len(y) for _, y in seqs], dtype=float)
-    net = Net(allX.shape[1], dilations)
+    net = Net(d_in, dilations)
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=LR, total_steps=steps, pct_start=0.1)
     lossf = nn.CrossEntropyLoss(ignore_index=3, reduction="none")
