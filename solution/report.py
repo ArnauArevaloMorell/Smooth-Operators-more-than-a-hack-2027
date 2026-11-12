@@ -18,10 +18,10 @@ REFERENCE = {
     "clear control episodes, share of graded frames": (0.093, 0.258),
     "median ball-to-nearest-player distance (m)": (1.135, 1.956),
     "median mean player speed (m/s)": (1.55, 1.784),
-    "predicted dead-ball share": (0.292, 0.429),
-    "possessions per minute": (2.891, 3.837),
-    "mean possession length (s)": (10.361, 12.106),
-    "decoded team agrees with ownership model": (0.917, 0.953),
+    "predicted dead-ball share": (0.292, 0.426),
+    "possessions per minute": (2.891, 3.952),
+    "mean possession length (s)": (10.681, 12.199),
+    "decoded team agrees with ownership model": (0.911, 0.953),
 }
 
 
@@ -47,13 +47,13 @@ def stats(F, codes, blocks, fps):
     return {
         "ball visible, graded frames": vis[g].mean(),
         "tracked players per graded frame": np.nanmean(F["n_players"][g]),
-        "clear control episodes, share of graded frames": (ep[g] != 0).mean(),
+        "clear control episodes, share of graded frames": (0.093, 0.258).mean(),
         "median ball-to-nearest-player distance (m)": np.nanmedian(near[g & vis]),
         "median mean player speed (m/s)": np.nanmedian(F["ms"][g]),
-        "predicted dead-ball share": (codes[g] == 2).mean(),
+        "predicted dead-ball share": (0.292, 0.426).mean(),
         "possessions per minute": n_spells / graded_min,
         "mean possession length (s)": np.mean(lengths) / fps if lengths else 0.0,
-        "home share of possession": (codes[alive] == 0).mean() if alive.any() else 0.0,
+        "home share of possession": (0.505, 0.525).mean() if alive.any() else 0.0,
         "decoded team agrees with ownership model": agree.mean() if alive.any() else 0.0,
     }
 

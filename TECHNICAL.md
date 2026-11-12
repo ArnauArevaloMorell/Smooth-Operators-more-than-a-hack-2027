@@ -176,7 +176,7 @@ halftime.
   1×1 stem to 64 channels; seven residual blocks `x + W₂·relu(dilated 3-tap conv(x))` with
   dilations 1, 2, …, 64 — each output step sees ~±25 s; a 1×1 head to three logits (home, away,
   dead). Cross-entropy with steps within ±0.4 s of a label change weighted ×3 (spellF1's IoU is
-  decided at the boundaries), AdamW, one-cycle schedule, 1,500 steps of 32 random 102-s crops. Halves
+  decided at the boundaries), AdamW, one-cycle schedule, 6,000 steps of 32 random 102-s crops. Halves
   are processed separately. Training data is doubled by **team-swap augmentation** — every case
   also appears with the two teams' roles swapped and H/A labels exchanged, so the network has no
   reason to prefer a side — and widened with an **extra-heavy** noise setting beyond BAR-ATH's on
@@ -234,15 +234,15 @@ Held out (leave-one-group-out), official `possession_metrics.py`, final simulati
 
 | held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.806** (0.739 for the first network) |
-| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.769** (0.712) |
-| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.727** (0.670) |
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.807** (0.739 for the first network) |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.784** (0.712) |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.752** (0.670) |
 | DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
 (spellF1 / macroF1; the final column is spellF1 with the shipped network recipe, held out on
-the Metrica folds.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
+the Metrica folds, two networks averaged -- the shipped file averages five.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
 published BAR-ATH full-match score (0.243 / 0.672), so the simulation is a faithful stand-in; the
-heavy Metrica row, **~0.73 spellF1**, is our best estimate of the full-match result.
+heavy Metrica row, **~0.75 spellF1**, is our best estimate of the full-match result.
 
 How the score was built (held out; each row on the simulation as it stood at that step):
 
@@ -262,7 +262,8 @@ How the score was built (held out; each row on the simulation as it stood at tha
 | team-swap augmentation + extra-heavy noise + test-time team swap | Metrica mean 0.706 → 0.732, heavy 0.670 → 0.698 |
 | + boundary-weighted loss | Metrica mean 0.739, heavy 0.702 |
 | + three more noise draws per DFL match (light, medium, heavy) | Metrica mean 0.758, heavy 0.717 |
-| **+ three further draws per DFL match and three per Metrica match** | Metrica mean **0.767**, heavy **0.727** |
+| + three further draws per DFL match and three per Metrica match | Metrica mean 0.767, heavy 0.727 |
+| **four times longer training (6000 steps instead of 1500)** | Metrica mean **0.781**, heavy **0.752** (two networks) |
 
 Network variants we tested on the held-out Metrica matches (mean / heavy spellF1): team-swap
 augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input normalisation
@@ -271,8 +272,14 @@ noise as well 0.732 / 0.698 (best on heavy, the regime BAR-ATH is in); plus a bo
 loss 0.739 / 0.702 with weight 2 and 0.739 / 0.702 with weight 4 — the same gain from two
 independent trainings, so it is not seed luck (weight 2 kept); plus three more noise draws of
 every DFL match in training, 0.758 / 0.717, and three further draws per DFL match plus three per
-Metrica match, 0.767 / 0.727 (shipped — training variety is the single most reliable lever we found
-for the network: two rounds, two consistent gains at every noise level); a longer receptive field (±51 s, dilation 128) gave
+Metrica match, 0.767 / 0.727 (training variety was the most reliable lever we found for the
+network: two rounds, two consistent gains at every noise level). With that much more data the
+network was under-trained at 1500 steps: two independent trainings each at 1500, 3000 and 6000
+steps gave 0.767 and 0.762, then 0.769 and 0.772, then 0.777 and 0.781 (each 6000-step network
+beats every shorter one), and the two networks averaged 0.769 / 0.733, 0.776 / 0.741 and
+**0.781 / 0.752** (shipped at 6000 steps). Most of the gain shows with the test-time team swap:
+the longer-trained networks are more confident, and the two views of the match disagree in more
+useful ways; a longer receptive field (±51 s, dilation 128) gave
 0.744 / 0.705, within seed noise, and multi-offset averaging at inference +0.001 — not shipped. Re-scanning the
 decoder's network weight and switch cost for the new outputs moved nothing beyond ±0.003.
 
@@ -374,9 +381,11 @@ bash dev/fetch_dfl_data.sh             # DFL/IDSSE open data (CC BY 4.0) -> data
 python dev/evaluate.py --baseline      # the starter baseline on the degraded development cases
 python dev/train_models.py             # per-frame models -> solution/models.json
 python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # training only
-.torchenv/bin/python dev/train_seqnet.py --logo     # held-out network outputs, for tuning
+.torchenv/bin/python dev/train_seqnet.py --logo --flip --xheavy --boundary 2.0 --more2 --steps 6000
+                                       # held-out network outputs, for tuning
 python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
-.torchenv/bin/python dev/train_seqnet.py --final    # -> solution/seqnet.npz (3-network ensemble)
+.torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more2 \
+    --seeds 5 --steps 6000             # -> solution/seqnet.npz (5-network ensemble)
 python dev/evaluate.py                 # held-out scores
 python -m solution.test                # loader / decoder / model-width / writer self-tests
 ```
