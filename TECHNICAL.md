@@ -180,7 +180,8 @@ halftime.
   are processed separately. Training data is doubled by **team-swap augmentation** — every case
   also appears with the two teams' roles swapped and H/A labels exchanged, so the network has no
   reason to prefer a side — and widened with an **extra-heavy** noise setting beyond BAR-ATH's on
-  every axis and three more noise draws (light, medium, heavy) of every DFL match. At inference the network also reads the match with the teams swapped and the two
+  every axis and with six more noise draws (light, medium, heavy) of every DFL match and three of
+  every Metrica match. At inference the network also reads the match with the teams swapped and the two
   readings are averaged (**test-time team swap**). Shipped as an ensemble of five networks (seeds
   0–4) whose probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
   export). Held out: team accuracy 0.952 (ball gaps 0.910), alive/dead accuracy 0.963 (before
@@ -233,15 +234,15 @@ Held out (leave-one-group-out), official `possession_metrics.py`, final simulati
 
 | held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.796** (0.739 for the first network) |
-| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.762** (0.712) |
-| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.717** (0.670) |
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.806** (0.739 for the first network) |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.769** (0.712) |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.727** (0.670) |
 | DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
 (spellF1 / macroF1; the final column is spellF1 with the shipped network recipe, held out on
 the Metrica folds.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
 published BAR-ATH full-match score (0.243 / 0.672), so the simulation is a faithful stand-in; the
-heavy Metrica row, **~0.72 spellF1**, is our best estimate of the full-match result.
+heavy Metrica row, **~0.73 spellF1**, is our best estimate of the full-match result.
 
 How the score was built (held out; each row on the simulation as it stood at that step):
 
@@ -260,7 +261,8 @@ How the score was built (held out; each row on the simulation as it stood at tha
 | temporal CNN, decoder re-tuned around it | 0.810 (Metrica heavy 0.578 → 0.670) |
 | team-swap augmentation + extra-heavy noise + test-time team swap | Metrica mean 0.706 → 0.732, heavy 0.670 → 0.698 |
 | + boundary-weighted loss | Metrica mean 0.739, heavy 0.702 |
-| **+ three more noise draws per DFL match (light, medium, heavy)** | Metrica mean **0.758**, heavy **0.717** |
+| + three more noise draws per DFL match (light, medium, heavy) | Metrica mean 0.758, heavy 0.717 |
+| **+ three further draws per DFL match and three per Metrica match** | Metrica mean **0.767**, heavy **0.727** |
 
 Network variants we tested on the held-out Metrica matches (mean / heavy spellF1): team-swap
 augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input normalisation
@@ -268,8 +270,9 @@ augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input n
 noise as well 0.732 / 0.698 (best on heavy, the regime BAR-ATH is in); plus a boundary-weighted
 loss 0.739 / 0.702 with weight 2 and 0.739 / 0.702 with weight 4 — the same gain from two
 independent trainings, so it is not seed luck (weight 2 kept); plus three more noise draws of
-every DFL match in training, 0.758 / 0.717 (shipped — training variety is the single most
-reliable lever we found for the network); a longer receptive field (±51 s, dilation 128) gave
+every DFL match in training, 0.758 / 0.717, and three further draws per DFL match plus three per
+Metrica match, 0.767 / 0.727 (shipped — training variety is the single most reliable lever we found
+for the network: two rounds, two consistent gains at every noise level); a longer receptive field (±51 s, dilation 128) gave
 0.744 / 0.705, within seed noise, and multi-offset averaging at inference +0.001 — not shipped. Re-scanning the
 decoder's network weight and switch cost for the new outputs moved nothing beyond ±0.003.
 
