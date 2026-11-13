@@ -235,7 +235,7 @@ def export(net, mean, std, permatch=False):
 
 
 def main():
-    global C
+    global C, CROP, BATCH
     ap = argparse.ArgumentParser()
     ap.add_argument("--logo", action="store_true")
     ap.add_argument("--final", action="store_true")
@@ -261,12 +261,16 @@ def main():
     ap.add_argument("--metrica-folds", action="store_true", help="--logo on the Metrica folds only")
     ap.add_argument("--dfl-folds", action="store_true", help="--logo on the DFL folds only")
     ap.add_argument("--channels", type=int, default=C, help="network width")
+    ap.add_argument("--crop", type=int, default=CROP,
+                    help="training window in steps (longer windows for wider receptive fields)")
+    ap.add_argument("--batch", type=int, default=BATCH, help="windows per training step")
     ap.add_argument("--resume", action="store_true",
                     help="--final: keep the members already in solution/seqnet.npz, train the rest")
     ap.add_argument("--metrica-only", action="store_true",
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
     C = a.channels
+    CROP, BATCH = a.crop, a.batch
     torch.set_num_threads(int(os.environ.get("SEQ_THREADS", "4")))
     for c in hz.CASES:
         case_seq(c)
