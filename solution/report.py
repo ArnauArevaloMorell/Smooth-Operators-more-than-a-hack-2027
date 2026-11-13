@@ -18,9 +18,9 @@ REFERENCE = {
     "clear control episodes, share of graded frames": (0.093, 0.258),
     "median ball-to-nearest-player distance (m)": (1.135, 1.956),
     "median mean player speed (m/s)": (1.55, 1.784),
-    "predicted dead-ball share": (0.293, 0.428),
-    "possessions per minute": (2.858, 3.984),
-    "mean possession length (s)": (10.597, 12.298),
+    "predicted dead-ball share": (0.293, 0.426),
+    "possessions per minute": (2.88, 3.984),
+    "mean possession length (s)": (10.606, 12.239),
     "decoded team agrees with ownership model": (0.91, 0.955),
 }
 
