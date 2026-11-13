@@ -87,12 +87,16 @@ MORE2_DFL = (("light", 43), ("medium", 44), ("heavy", 45))  # --more2: three mor
 MORE2_METRICA = (("light", 50), ("medium", 51), ("heavy", 52))  # ... and three per Metrica match
 MORE3_DFL = (("light", 46), ("medium", 47), ("heavy", 48))  # --more3: a third round on top of --more2
 MORE3_METRICA = (("light", 53), ("medium", 54), ("heavy", 55))
+MORE4_DFL = (("light", 56), ("medium", 57), ("heavy", 58))  # --more4: a fourth round on top of --more3
+MORE4_METRICA = (("light", 59), ("medium", 60), ("heavy", 61))
 
 
-def training_seqs(cases, flip=False, xheavy=False, more=False, more2=False, more3=False):
+def training_seqs(cases, flip=False, xheavy=False, more=False, more2=False, more3=False,
+                  more4=False):
     """[(X, y, case_key)] for training: the cases, plus their flipped and extra-heavy versions."""
     out = [(x, y, c) for c in cases for x, y in case_seq(c)]
     games = sorted(set(c[0] for c in cases))
+    more3 = more3 or more4
     if more or more2 or more3:
         extra = [(g, st, sd) for g in games if g in hz.DFL_GAMES for st, sd in MORE]
         if more2 or more3:
@@ -101,6 +105,9 @@ def training_seqs(cases, flip=False, xheavy=False, more=False, more2=False, more
         if more3:
             extra += [(g, st, sd) for g in games if g in hz.DFL_GAMES for st, sd in MORE3_DFL]
             extra += [(g, st, sd) for g in games if g in hz.METRICA_GAMES for st, sd in MORE3_METRICA]
+        if more4:
+            extra += [(g, st, sd) for g in games if g in hz.DFL_GAMES for st, sd in MORE4_DFL]
+            extra += [(g, st, sd) for g in games if g in hz.METRICA_GAMES for st, sd in MORE4_METRICA]
         out += [(x, y, c) for c in extra for x, y in seq_direct(*c)]
         if flip:
             out += [(x, y, c + ("flip",)) for c in extra for x, y in seq_direct(*c, flip=True)]
@@ -141,10 +148,12 @@ def boundary_weights(y, radius=2, weight=2.0):
 
 
 def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, permatch=False,
-          boundary=0.0, more=False, dilations=DILATIONS, more2=False, more3=False):
+          boundary=0.0, more=False, dilations=DILATIONS, more2=False, more3=False,
+          more4=False):
     torch.manual_seed(seed)
     rng = np.random.RandomState(seed)
-    triples = training_seqs(cases, flip=flip, xheavy=xheavy, more=more, more2=more2, more3=more3)
+    triples = training_seqs(cases, flip=flip, xheavy=xheavy, more=more, more2=more2, more3=more3,
+                             more4=more4)
     # mean / std without stacking every sequence (memory: the data set is ~4 GB)
     n = sum(len(x) for x, _, _ in triples)
     mean = sum(x.sum(axis=0, dtype=np.float64) for x, _, _ in triples) / n
@@ -243,6 +252,8 @@ def main():
                     help="--final: write the ensemble here instead of solution/seqnet.npz")
     ap.add_argument("--more3", action="store_true",
                     help="--more2 plus a third round: three more draws per DFL and per Metrica match")
+    ap.add_argument("--more4", action="store_true",
+                    help="--more3 plus a fourth round: three more draws per DFL and per Metrica match")
     ap.add_argument("--dilations", type=int, nargs="+", default=list(DILATIONS))
     ap.add_argument("--boundary", type=float, default=0.0,
                     help="extra loss weight near label changes (0 = plain cross-entropy)")
@@ -256,7 +267,7 @@ def main():
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
     C = a.channels
-    torch.set_num_threads(4)
+    torch.set_num_threads(int(os.environ.get("SEQ_THREADS", "4")))
     for c in hz.CASES:
         case_seq(c)
     if a.logo:
@@ -271,7 +282,7 @@ def main():
             print("fold", f, "training on", len(train_cases), "cases", flush=True)
             w = train(train_cases, seed=a.seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
                       permatch=a.permatch, boundary=a.boundary, more=a.more,
-                      dilations=a.dilations, more2=a.more2, more3=a.more3)
+                      dilations=a.dilations, more2=a.more2, more3=a.more3, more4=a.more4)
             np.savez(os.path.join(hz.CACHE_DIR, "seqnet%s_fold_%s.npz" % (a.tag, f)), **w)
             for c in hz.CASES:
                 if hz.fold_of(c[0]) != f:
@@ -290,7 +301,7 @@ def main():
             print("final network, seed", seed, flush=True)
             nets.append(train(hz.CASES, seed=seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
                               permatch=a.permatch, boundary=a.boundary, more=a.more,
-                              dilations=a.dilations, more2=a.more2, more3=a.more3))
+                              dilations=a.dilations, more2=a.more2, more3=a.more3, more4=a.more4))
             seqnet.save(nets, out)     # saved after each member, so a partial ensemble is usable
         print("wrote", out, "with", len(nets), "networks")
 
