@@ -2,7 +2,7 @@
 
 | | command | held-out spellF1, Metrica heavy noise (closest to BAR-ATH) |
 |---|---|---|
-| **learned pipeline + temporal CNN (submission)** | `python -m solution.make_submission --team <team_name>` | **0.760** |
+| **learned pipeline + temporal CNN (submission)** | `python -m solution.make_submission --team <team_name>` | **0.763** |
 | learned pipeline, per-frame models only | same, with `w_seq` set to 0 in `solution/params.json` | 0.578 |
 | rule-based v1 (steps below) | `python solution/03_possession_v1.py` | ~0.28 (18-case average 0.303) |
 | starter `baseline_smooth50` | `python starter/baseline.py` | 0.231 |

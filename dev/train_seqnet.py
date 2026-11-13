@@ -239,6 +239,8 @@ def main():
     ap.add_argument("--more", action="store_true", help="three extra noise draws per DFL match")
     ap.add_argument("--more2", action="store_true",
                     help="--more plus three further draws per DFL match and three per Metrica match")
+    ap.add_argument("--out", default=None,
+                    help="--final: write the ensemble here instead of solution/seqnet.npz")
     ap.add_argument("--more3", action="store_true",
                     help="--more2 plus a third round: three more draws per DFL and per Metrica match")
     ap.add_argument("--dilations", type=int, nargs="+", default=list(DILATIONS))
@@ -282,14 +284,15 @@ def main():
                         lp.astype(np.float32))
     if a.final:
         # --resume continues a partly written ensemble (members are saved one by one)
-        nets = (seqnet.load() or []) if a.resume else []
+        out = a.out or seqnet.WEIGHTS_PATH
+        nets = (seqnet.load(out) or []) if a.resume else []
         for seed in range(len(nets), a.seeds):
             print("final network, seed", seed, flush=True)
             nets.append(train(hz.CASES, seed=seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
                               permatch=a.permatch, boundary=a.boundary, more=a.more,
                               dilations=a.dilations, more2=a.more2, more3=a.more3))
-            seqnet.save(nets)          # saved after each member, so a partial ensemble is usable
-        print("wrote", seqnet.WEIGHTS_PATH, "with", len(nets), "networks")
+            seqnet.save(nets, out)     # saved after each member, so a partial ensemble is usable
+        print("wrote", out, "with", len(nets), "networks")
 
 
 if __name__ == "__main__":

@@ -180,10 +180,11 @@ halftime.
   are processed separately. Training data is doubled by **team-swap augmentation** — every case
   also appears with the two teams' roles swapped and H/A labels exchanged, so the network has no
   reason to prefer a side — and widened with an **extra-heavy** noise setting beyond BAR-ATH's on
-  every axis and with six more noise draws (light, medium, heavy) of every DFL match and three of
-  every Metrica match. At inference the network also reads the match with the teams swapped and the two
+  every axis and with nine more noise draws (three each of light, medium, heavy) of every DFL match
+  and six of every Metrica match. At inference the network also reads the match with the teams swapped and the two
   readings are averaged (**test-time team swap**). Shipped as an ensemble of ten networks (seeds
-  0–4 trained for 6,000 steps, seeds 5–9 for 12,000) whose probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
+  0–4 trained for 6,000 steps on that data; seeds 5–9 for 12,000 steps on the data without the
+  last three draws per match) whose probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
   export). Held out: team accuracy 0.952 (ball gaps 0.910), alive/dead accuracy 0.963 (before
   the swap augmentation).
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
@@ -234,9 +235,9 @@ Held out (leave-one-group-out), official `possession_metrics.py`, final simulati
 
 | held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.810** (0.739 for the first network) |
-| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.782** (0.712) |
-| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.760** (0.670) |
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.813** (0.739 for the first network) |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.785** (0.712) |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.763** (0.670) |
 | DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
 (spellF1 / macroF1; the final column is spellF1 with the shipped network recipe, held out on
@@ -264,7 +265,8 @@ How the score was built (held out; each row on the simulation as it stood at tha
 | + three more noise draws per DFL match (light, medium, heavy) | Metrica mean 0.758, heavy 0.717 |
 | + three further draws per DFL match and three per Metrica match | Metrica mean 0.767, heavy 0.727 |
 | four times longer training (6000 steps instead of 1500) | Metrica mean 0.781, heavy 0.752 (two networks) |
-| **networks trained for 6000 and for 12000 steps, averaged** | Metrica mean **0.784**, heavy **0.760** (four networks) |
+| networks trained for 6000 and for 12000 steps, averaged | Metrica mean 0.784, heavy 0.760 (four networks) |
+| **+ a third round of draws (three more per DFL and per Metrica match) for the 6000-step networks** | Metrica mean **0.787**, heavy **0.763** (four networks) |
 
 Network variants we tested on the held-out Metrica matches (mean / heavy spellF1): team-swap
 augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input normalisation
@@ -274,7 +276,7 @@ loss 0.739 / 0.702 with weight 2 and 0.739 / 0.702 with weight 4 — the same ga
 independent trainings, so it is not seed luck (weight 2 kept); plus three more noise draws of
 every DFL match in training, 0.758 / 0.717, and three further draws per DFL match plus three per
 Metrica match, 0.767 / 0.727 (training variety was the most reliable lever we found for the
-network: two rounds, two consistent gains at every noise level). With that much more data the
+network: three rounds, three consistent gains at every noise level -- the third is below). With that much more data the
 network was under-trained at 1500 steps: two independent trainings each at 1500, 3000 and 6000
 steps gave 0.767 and 0.762, then 0.769 and 0.772, then 0.777 and 0.781 (each 6000-step network
 beats every shorter one), and the two networks averaged 0.769 / 0.733, 0.776 / 0.741 and
@@ -289,6 +291,11 @@ Doubling again to 12,000 steps did not help a single network (0.773 and 0.778; t
 all four together **0.784 / 0.760** — shipped as five networks of each length. (Mixing 3,000- and
 6,000-step networks gave no such gain, 0.780; the decoder re-scan on the four-network outputs
 found +0.001, which leave-one-game-out did not confirm, so the decoder is unchanged.)
+A third round of noise draws (three more per DFL and per Metrica match) gave a third consistent
+gain: two 6,000-step networks scored 0.782 and 0.782 (against 0.777 and 0.781 without it), and
+averaged 0.786 / 0.762 (against 0.781 / 0.752); with the two 12,000-step networks, **0.787 /
+0.763** — the shipped mix, five networks of each kind. (A decoder re-scan on these outputs
+again found no setting that leave-one-game-out preferred, 0.784 against 0.787, so the decoder is unchanged.)
 
 **Decisions made against the simulation's preference, for the real match.**
 
@@ -388,10 +395,10 @@ bash dev/fetch_dfl_data.sh             # DFL/IDSSE open data (CC BY 4.0) -> data
 python dev/evaluate.py --baseline      # the starter baseline on the degraded development cases
 python dev/train_models.py             # per-frame models -> solution/models.json
 python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # training only
-.torchenv/bin/python dev/train_seqnet.py --logo --flip --xheavy --boundary 2.0 --more2 --steps 6000
+.torchenv/bin/python dev/train_seqnet.py --logo --flip --xheavy --boundary 2.0 --more3 --steps 6000
                                        # held-out network outputs, for tuning
 python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
-.torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more2 \
+.torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more3 \
     --seeds 5 --steps 6000             # -> solution/seqnet.npz (networks 0-4)
 .torchenv/bin/python dev/train_seqnet.py --final --resume --flip --xheavy --boundary 2.0 --more2 \
     --seeds 10 --steps 12000           # adds networks 5-9 (10-network ensemble)
