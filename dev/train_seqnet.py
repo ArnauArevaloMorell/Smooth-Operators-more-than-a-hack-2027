@@ -241,6 +241,8 @@ def main():
     ap.add_argument("--metrica-folds", action="store_true", help="--logo on the Metrica folds only")
     ap.add_argument("--dfl-folds", action="store_true", help="--logo on the DFL folds only")
     ap.add_argument("--channels", type=int, default=C, help="network width")
+    ap.add_argument("--resume", action="store_true",
+                    help="--final: keep the members already in solution/seqnet.npz, train the rest")
     ap.add_argument("--metrica-only", action="store_true",
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
@@ -272,8 +274,9 @@ def main():
                 np.save(os.path.join(hz.CACHE_DIR, "%s_%d_%s_%d.npy" % ((prefix,) + c)),
                         lp.astype(np.float32))
     if a.final:
-        nets = []
-        for seed in range(a.seeds):
+        # --resume continues a partly written ensemble (members are saved one by one)
+        nets = (seqnet.load() or []) if a.resume else []
+        for seed in range(len(nets), a.seeds):
             print("final network, seed", seed, flush=True)
             nets.append(train(hz.CASES, seed=seed, steps=a.steps, flip=a.flip, xheavy=a.xheavy,
                               permatch=a.permatch, boundary=a.boundary, more=a.more,
