@@ -36,7 +36,7 @@ ATD (players by team, ball) ──► features (metres, seconds, per half)
                                   │  shape:    per-team advancement, stretch, movement to goal
                                   │  touches:  contests, abrupt ball-velocity changes
                                   ▼
-          temporal CNN (3-network ensemble) ──► P(home), P(away), P(dead) per frame
+          temporal CNN (10-network ensemble) ─► P(home), P(away), P(dead) per frame
           + dead-ball MLP, ownership & hazard models (direct cues, per-frame switch cost)
                                   ▼
 Smart Tagging ──► restart priors ──► emissions (T × 4) ──► Viterbi ──► H/A/D per frame
@@ -176,14 +176,14 @@ halftime.
   1×1 stem to 64 channels; seven residual blocks `x + W₂·relu(dilated 3-tap conv(x))` with
   dilations 1, 2, …, 64 — each output step sees ~±25 s; a 1×1 head to three logits (home, away,
   dead). Cross-entropy with steps within ±0.4 s of a label change weighted ×3 (spellF1's IoU is
-  decided at the boundaries), AdamW, one-cycle schedule, 6,000 steps of 32 random 102-s crops. Halves
+  decided at the boundaries), AdamW, one-cycle schedule, 6,000 or 12,000 steps of 32 random 102-s crops. Halves
   are processed separately. Training data is doubled by **team-swap augmentation** — every case
   also appears with the two teams' roles swapped and H/A labels exchanged, so the network has no
   reason to prefer a side — and widened with an **extra-heavy** noise setting beyond BAR-ATH's on
   every axis and with six more noise draws (light, medium, heavy) of every DFL match and three of
   every Metrica match. At inference the network also reads the match with the teams swapped and the two
-  readings are averaged (**test-time team swap**). Shipped as an ensemble of five networks (seeds
-  0–4) whose probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
+  readings are averaged (**test-time team swap**). Shipped as an ensemble of ten networks (seeds
+  0–4 trained for 6,000 steps, seeds 5–9 for 12,000) whose probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
   export). Held out: team accuracy 0.952 (ball gaps 0.910), alive/dead accuracy 0.963 (before
   the swap augmentation).
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
@@ -234,15 +234,15 @@ Held out (leave-one-group-out), official `possession_metrics.py`, final simulati
 
 | held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.807** (0.739 for the first network) |
-| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.784** (0.712) |
-| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.752** (0.670) |
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.810** (0.739 for the first network) |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.782** (0.712) |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.760** (0.670) |
 | DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
 (spellF1 / macroF1; the final column is spellF1 with the shipped network recipe, held out on
-the Metrica folds, two networks averaged -- the shipped file averages five.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
+the Metrica folds, four networks averaged -- two of each training length; the shipped file averages ten.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
 published BAR-ATH full-match score (0.243 / 0.672), so the simulation is a faithful stand-in; the
-heavy Metrica row, **~0.75 spellF1**, is our best estimate of the full-match result.
+heavy Metrica row, **~0.76 spellF1**, is our best estimate of the full-match result.
 
 How the score was built (held out; each row on the simulation as it stood at that step):
 
@@ -263,7 +263,8 @@ How the score was built (held out; each row on the simulation as it stood at tha
 | + boundary-weighted loss | Metrica mean 0.739, heavy 0.702 |
 | + three more noise draws per DFL match (light, medium, heavy) | Metrica mean 0.758, heavy 0.717 |
 | + three further draws per DFL match and three per Metrica match | Metrica mean 0.767, heavy 0.727 |
-| **four times longer training (6000 steps instead of 1500)** | Metrica mean **0.781**, heavy **0.752** (two networks) |
+| four times longer training (6000 steps instead of 1500) | Metrica mean 0.781, heavy 0.752 (two networks) |
+| **networks trained for 6000 and for 12000 steps, averaged** | Metrica mean **0.784**, heavy **0.760** (four networks) |
 
 Network variants we tested on the held-out Metrica matches (mean / heavy spellF1): team-swap
 augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input normalisation
@@ -277,11 +278,17 @@ network: two rounds, two consistent gains at every noise level). With that much 
 network was under-trained at 1500 steps: two independent trainings each at 1500, 3000 and 6000
 steps gave 0.767 and 0.762, then 0.769 and 0.772, then 0.777 and 0.781 (each 6000-step network
 beats every shorter one), and the two networks averaged 0.769 / 0.733, 0.776 / 0.741 and
-**0.781 / 0.752** (shipped at 6000 steps). Most of the gain shows with the test-time team swap:
+0.781 / 0.752. Most of the gain shows with the test-time team swap:
 the longer-trained networks are more confident, and the two views of the match disagree in more
 useful ways; a longer receptive field (±51 s, dilation 128) gave
 0.744 / 0.705, within seed noise, and multi-offset averaging at inference +0.001 — not shipped. Re-scanning the
 decoder's network weight and switch cost for the new outputs moved nothing beyond ±0.003.
+Doubling again to 12,000 steps did not help a single network (0.773 and 0.778; the two averaged
+0.781 / 0.758), but networks of the two lengths make different mistakes: one 6,000-step and one
+12,000-step network averaged gave 0.782 and 0.783 against 0.781 for two of the same length, and
+all four together **0.784 / 0.760** — shipped as five networks of each length. (Mixing 3,000- and
+6,000-step networks gave no such gain, 0.780; the decoder re-scan on the four-network outputs
+found +0.001, which leave-one-game-out did not confirm, so the decoder is unchanged.)
 
 **Decisions made against the simulation's preference, for the real match.**
 
@@ -385,7 +392,9 @@ python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # 
                                        # held-out network outputs, for tuning
 python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
 .torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more2 \
-    --seeds 5 --steps 6000             # -> solution/seqnet.npz (5-network ensemble)
+    --seeds 5 --steps 6000             # -> solution/seqnet.npz (networks 0-4)
+.torchenv/bin/python dev/train_seqnet.py --final --resume --flip --xheavy --boundary 2.0 --more2 \
+    --seeds 10 --steps 12000           # adds networks 5-9 (10-network ensemble)
 python dev/evaluate.py                 # held-out scores
 python -m solution.test                # loader / decoder / model-width / writer self-tests
 ```
