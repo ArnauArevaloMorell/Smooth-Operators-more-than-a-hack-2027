@@ -47,13 +47,13 @@ def stats(F, codes, blocks, fps):
     return {
         "ball visible, graded frames": vis[g].mean(),
         "tracked players per graded frame": np.nanmean(F["n_players"][g]),
-        "clear control episodes, share of graded frames": (0.093, 0.258).mean(),
+        "clear control episodes, share of graded frames": (ep[g] != 0).mean(),
         "median ball-to-nearest-player distance (m)": np.nanmedian(near[g & vis]),
         "median mean player speed (m/s)": np.nanmedian(F["ms"][g]),
-        "predicted dead-ball share": (0.292, 0.426).mean(),
+        "predicted dead-ball share": (codes[g] == 2).mean(),
         "possessions per minute": n_spells / graded_min,
         "mean possession length (s)": np.mean(lengths) / fps if lengths else 0.0,
-        "home share of possession": (0.505, 0.525).mean() if alive.any() else 0.0,
+        "home share of possession": (codes[alive] == 0).mean() if alive.any() else 0.0,
         "decoded team agrees with ownership model": agree.mean() if alive.any() else 0.0,
     }
 
