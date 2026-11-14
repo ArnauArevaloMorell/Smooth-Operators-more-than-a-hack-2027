@@ -1,4 +1,4 @@
-"""Health report for a real run: summary statistics next to the range seen on the sample games.
+"""Health report for a real run: summary statistics next to their range in simulation.
 
 Nothing here changes the submission. It exists because the method was developed on other matches
 with simulated noise: if the BAR-ATH tracking differs from that simulation in a way that matters,
@@ -10,18 +10,19 @@ import numpy as np
 
 from . import features
 
-# (low, high) over the 18 degraded sample-game cases (dev/harness.py), see dev/report_ranges.py.
+# (low, high) over the 32 degraded development cases (Metrica sample games and DFL matches,
+# dev/harness.py), see dev/report_ranges.py.
 # Home share is a property of the match, not of the pipeline, so it has no range.
 REFERENCE = {
     "ball visible, graded frames": (0.446, 0.716),
-    "tracked players per graded frame": (19.853, 21.159),
-    "clear control episodes, share of graded frames": (0.093, 0.258),
-    "median ball-to-nearest-player distance (m)": (1.135, 1.956),
-    "median mean player speed (m/s)": (1.55, 1.784),
-    "predicted dead-ball share": (0.292, 0.43),
-    "possessions per minute": (2.901, 3.984),
-    "mean possession length (s)": (10.606, 12.114),
-    "decoded team agrees with ownership model": (0.909, 0.956),
+    "tracked players per graded frame": (19.102, 21.159),
+    "clear control episodes, share of graded frames": (0.062, 0.258),
+    "median ball-to-nearest-player distance (m)": (1.135, 2.835),
+    "median mean player speed (m/s)": (1.425, 1.784),
+    "predicted dead-ball share": (0.316, 0.525),
+    "possessions per minute": (3.035, 4.037),
+    "mean possession length (s)": (7.065, 12.168),
+    "decoded team agrees with ownership model": (0.903, 0.955),
 }
 
 

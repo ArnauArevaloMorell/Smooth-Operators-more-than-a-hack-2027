@@ -117,7 +117,7 @@ def build(data_dir=None, use_tags=True, params_path=pipeline.PARAMS_PATH, verbos
     check(not flagged_x, "evidence cross-check: every source agrees with the others as in "
           "simulation" if not flagged_x else "evidence cross-check flags: " + "; ".join(flagged_x),
           "WARN")
-    check(not flagged, "health report: every value inside its sample-game range" if not flagged
+    check(not flagged, "health report: every value inside its simulated range" if not flagged
           else "health report flags: " + "; ".join(flagged), "WARN")
     return codes
 
