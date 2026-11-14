@@ -27,6 +27,7 @@ from solution import seqnet  # noqa: E402
 C = 64
 DILATIONS = (1, 2, 4, 8, 16, 32, 64)
 CROP = 512            # steps = 102 s
+IN_DROP = 0.0         # training only: share of input features blanked (set to their mean) per window
 BATCH = 32
 STEPS = 1500
 LR = 2e-3
@@ -132,6 +133,11 @@ class Net(nn.Module):
         self.head = nn.Conv1d(C, 3, 1)
 
     def forward(self, x):
+        if self.training and IN_DROP > 0:
+            # blank whole input features for a window (standardised, so 0 = the feature's mean):
+            # the network cannot lean on any single cue that the real tracking may get wrong
+            keep = (torch.rand(x.shape[0], x.shape[1], 1) >= IN_DROP).to(x.dtype)
+            x = x * keep
         x = self.stem(x)
         for c1, c2 in zip(self.c1, self.c2):
             x = x + c2(self.drop(torch.relu(c1(x))))
@@ -235,7 +241,7 @@ def export(net, mean, std, permatch=False):
 
 
 def main():
-    global C, CROP, BATCH
+    global C, CROP, BATCH, IN_DROP
     ap = argparse.ArgumentParser()
     ap.add_argument("--logo", action="store_true")
     ap.add_argument("--final", action="store_true")
@@ -264,13 +270,15 @@ def main():
     ap.add_argument("--crop", type=int, default=CROP,
                     help="training window in steps (longer windows for wider receptive fields)")
     ap.add_argument("--batch", type=int, default=BATCH, help="windows per training step")
+    ap.add_argument("--in-drop", type=float, default=IN_DROP,
+                    help="training only: share of input features blanked per window")
     ap.add_argument("--resume", action="store_true",
                     help="--final: keep the members already in solution/seqnet.npz, train the rest")
     ap.add_argument("--metrica-only", action="store_true",
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
     C = a.channels
-    CROP, BATCH = a.crop, a.batch
+    CROP, BATCH, IN_DROP = a.crop, a.batch, a.in_drop
     torch.set_num_threads(int(os.environ.get("SEQ_THREADS", "4")))
     for c in hz.CASES:
         case_seq(c)
