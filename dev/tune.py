@@ -80,7 +80,7 @@ def main():
     hz.logo_models()
     for c in hz.CASES:
         hz.case_data(*c)
-    with mp.Pool(min(4, mp.cpu_count())) as pool:
+    with mp.Pool(int(os.environ.get("TUNE_WORKERS", min(4, mp.cpu_count())))) as pool:
         best, best_m = objective(pool, p)
         print("start spellF1 {:.4f} macroF1 {:.4f}".format(best, best_m), flush=True)
         names = a.only or list(SPACE)

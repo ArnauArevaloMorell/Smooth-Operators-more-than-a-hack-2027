@@ -58,8 +58,8 @@ Smart Tagging ──► restart priors ──► emissions (T × 4) ──► Vi
 * **Context is the rest of the answer.** Per-frame models top out around 0.91 team accuracy under
   BAR-ATH-like noise, because whether a touch changed possession depends on what happens over the
   next seconds. A temporal CNN that sees ±51 s raises held-out team accuracy on live frames from
-  0.933 to 0.951 on Metrica (0.886 → 0.906 on DFL) and held-out spellF1
-  by +0.12 on Metrica and +0.12 on DFL (§6).
+  0.933 to 0.953 on Metrica (0.886 → 0.909 on DFL) and held-out spellF1
+  by about +0.13 on both (§6).
 * **Small models, few constants.** The development set is three matches, so the models are a
   32-unit MLP, logistic regressions and a 64-channel network, and the decoder has ~20 constants,
   all shared across matches. Inference is numpy only and deterministic.
@@ -139,8 +139,8 @@ network figures in §2 and §5.2 are from the corrected data.
 
 With the real matches the picture is the reverse of what we wrote before. DFL's ground truth is
 made the way BAR-ATH's is (the tracking provider's ball-status and possession flags, CHALLENGE.md),
-and it is the *harder* set: held out, the final pipeline scores 0.642 spellF1 on DFL against
-0.735 on Metrica. We quote both, and read the DFL rows as the closer forecast of BAR-ATH.
+and it is the *harder* set: held out, the final pipeline scores 0.658 spellF1 on DFL against
+0.748 on Metrica. We quote both, and read the DFL rows as the closer forecast of BAR-ATH.
 Training the networks on the real DFL matches was the largest single gain of the project: on the
 two Metrica games the bug did not touch, one network went from 0.708 to 0.744 held out (11 of 12
 cases better), and on DFL from 0.614 (update 13's networks, which never saw a DFL match) to 0.642.
@@ -197,7 +197,7 @@ halftime.
   readings are averaged (**test-time team swap**). Shipped as an ensemble of five networks trained on all
   of that data (seeds 0–4); their probabilities are averaged; numpy reproduces PyTorch's outputs to
   < 1e-3 (checked at export). Held out, the full pipeline's team accuracy on live frames is
-  0.951 on Metrica and 0.906 on DFL (0.933 / 0.886 without the network).
+  0.953 on Metrica and 0.909 on DFL (0.933 / 0.886 without the network).
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
   from the contrast between the last half-second and the next (control by each side, the last and
   next controlling team), from signs of a contest (both sides within 3 m of the ball) and from
@@ -248,17 +248,18 @@ check:
 
 | held-out cases | starter `baseline_smooth50` | same pipeline without the network | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.651 / 0.905 | **0.773 / 0.938** |
-| Metrica medium (6) | 0.255 / 0.628 | 0.613 / 0.890 | **0.734 / 0.928** |
-| Metrica heavy (6) | 0.231 / 0.608 | 0.576 / 0.863 | **0.699 / 0.919** |
-| DFL medium (7) | 0.231 / 0.533 | 0.537 / 0.880 | **0.654 / 0.923** |
-| DFL heavy (7) — closest to BAR-ATH | 0.201 / 0.513 | 0.508 / 0.868 | **0.630 / 0.915** |
+| Metrica light (6) | 0.321 / 0.646 | 0.651 / 0.905 | **0.782 / 0.939** |
+| Metrica medium (6) | 0.255 / 0.628 | 0.613 / 0.890 | **0.745 / 0.929** |
+| Metrica heavy (6) | 0.231 / 0.608 | 0.576 / 0.863 | **0.717 / 0.921** |
+| DFL medium (7) | 0.231 / 0.533 | 0.537 / 0.880 | **0.669 / 0.924** |
+| DFL heavy (7) — closest to BAR-ATH | 0.201 / 0.513 | 0.508 / 0.868 | **0.648 / 0.916** |
 
-(spellF1 / macroF1; the final column is one network of the shipped recipe per fold, trained
-without the match it scores; the shipped file averages five, which should do slightly better.) The starter baseline on
+(spellF1 / macroF1; the final column averages two networks of the shipped recipe per fold, each
+trained without the match it scores; the shipped file averages five. The middle column is the
+per-frame models with update 14's decoder settings.) The starter baseline on
 the heavy Metrica simulation (0.231 / 0.608) sits next to its published BAR-ATH full-match score
-(0.243 / 0.672), so the simulation's noise is a fair stand-in. The heavy DFL row, **~0.63
-spellF1**, is our best estimate of the full-match result, with the heavy Metrica row (0.70) as the
+(0.243 / 0.672), so the simulation's noise is a fair stand-in. The heavy DFL row, **~0.65
+spellF1**, is our best estimate of the full-match result, with the heavy Metrica row (0.72) as the
 optimistic end.
 
 How the score was built (held out; each row on the simulation as it stood at that step). **All
@@ -289,7 +290,8 @@ so read them as relative evidence, not forecasts:
 | + the same third round for the 12000-step networks | Metrica mean 0.788, heavy 0.766 (four networks) |
 | the 6000-step networks see ±51 s instead of ±25 s (dilation 128) | Metrica mean 0.793, heavy 0.769 (four networks) |
 | *corrected data (§4); update 13 re-measured* | *Metrica games 1–2 0.714, DFL 0.614* |
-| **networks trained on the real DFL matches** (±51 s, 6000 steps; the 12,000-step group dropped) | **Metrica 0.735 (games 1–2 0.744), DFL 0.642** (one network) |
+| networks trained on the real DFL matches (±51 s, 6000 steps; the 12,000-step group dropped) | Metrica 0.735 (games 1–2 0.744), DFL 0.642 (one network) |
+| **decoder re-scanned on the corrected data: switch cost ×2, network weight 2.5, no separate ownership term** | **Metrica 0.748 (games 1–2 0.755), DFL 0.658** (two networks) |
 
 Network variants we tested before the fix (§4), on the held-out Metrica matches (mean / heavy
 spellF1, game 3 leaked as described there): team-swap
@@ -343,31 +345,41 @@ better on 11 of 12 cases) and took DFL from 0.614 to 0.642. Update 13's 12,000-s
 which never saw a DFL match, now hurt in the mix: one new network averaged with one of them scored
 0.008 lower on games 1–2 and 0.010 lower on DFL than the new network alone, so that group was
 dropped and the five shipped networks are all ±51 s at 6,000 steps. The per-frame models were
-refitted with the DFL matches too. A decoder re-scan on the new held-out outputs preferred a 1.4×
-higher switch cost by +0.003 to +0.004, which leave-one-match-out did not confirm on DFL (0.6417
-against 0.6416); decoder unchanged.
+refitted with the DFL matches too. The decoder, last tuned before the fix, was then re-scanned on
+two networks' held-out outputs. A higher switch cost sits on a broad plateau: twice the old cost
+with network weight 2.5 gave +0.005 on both Metrica and DFL (better on 14 of 18 and 10 of 14
+cases), chosen by every leave-one-match-out fold; dropping the per-frame ownership model's own
+term (the network already reads its features) added +0.003 on both, on 8 of the 10 matches.
+Together, in the full pipeline: Metrica 0.740 → 0.748, DFL 0.651 → 0.658. A full re-tune of all
+~20 decoder constants did not transfer — tuned on half the matches it lost 0.008 on the other half
+(and gained 0.002 the other way round) — so only those three constants changed. The phase-tag
+weight stayed at 0.1 (the tuner again wanted 0.85; see the phases decision below).
 
 **Decisions made against the simulation's preference, for the real match.**
 
 * *Phases:* without the network the tuner wanted weights of 0.58–0.75; re-simulated with phases
   60–70% correct, such weights lose up to 0.012, so we shipped 0.2, and 0.1 once the network made
-  phases irrelevant (< 0.001 either way).
+  phases irrelevant (< 0.001 either way). On the corrected data the tuner wanted 0.85 again; our
+  simulated phases are cleaner than BAR-ATH's (they agree with clear ball control 78% of the time
+  there), so it stays at 0.1.
 * *Set pieces:* with the tag's team wrong 35% of the time and 40% false tags added, the tuned
   weights still beat no tags — kept.
-* *Decoder tuned on Metrica alone* (human labels only; measured before the fix, §4) gained +0.008 to
-  +0.017 there but lost 0.02–0.05 on "DFL", by switching possession less often (3.37 → 3.03
-  possessions/min on Metrica); after the fix the re-scan again leaned toward switching less (above)
-  without confirming it. On BAR-ATH
-  the pipeline already reports fewer possessions per minute (2.59) than any simulated case, so a
-  setting that switches even less is the wrong direction for the real match — not shipped.
+* *Switching less.* Before the fix we declined a higher switch cost: BAR-ATH already showed fewer
+  possessions per minute than any simulated case, so switching even less looked like the wrong
+  direction. On the corrected data both kinds of labels prefer it (above), and on every simulated
+  case spellF1 rewards fewer, surer possessions even though the predicted count already sits at
+  75–80% of the true one. We adopted it. The cost is a known risk: if BAR-ATH's truth has many
+  very short possessions, this setting misses more of them.
 
 **Where it fails, and what we would do next:**
 
-* **Very short possessions** (< 2 s, a quarter of all possessions in the sample games' event data)
-  remain the hardest: a one-touch interception rarely shows enough control to pay for two
-  switches, even with the network and the per-frame switch cost.
-  Whether the BAR-ATH ground truth has as many of them is unknown (its public 5 minutes have 2 of
-  17), so we did not push the switch cost down to chase them.
+* **Very short possessions** remain the hardest and are where most of the score is lost: a
+  one-touch interception rarely shows enough control to pay for two switches, even with the
+  network and the per-frame switch cost. Held out (one network, update 14's decoder), possessions
+  under 2 s are 30% of DFL's and 27% of Metrica's, and only 26% / 33% of them are found at IoU 0.5,
+  against 85–97% for possessions over 8 s; a missed short possession is mostly absorbed into the
+  other team's possession around it. Whether the BAR-ATH ground truth has as many of them is
+  unknown (its public 5 minutes have 2 of 17), so we did not lower the switch cost to chase them.
 * **Ball gaps.** Inside the ATD's long gaps (median 11 s) the network reaches 0.91 team accuracy
   against 0.95 with the ball seen. The biggest improvement left is a better ball: a ball detector
   on the tactical video, through the homography, to fill the gaps; and, as some teams do, the
@@ -450,6 +462,7 @@ python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # 
 .torchenv/bin/python dev/train_seqnet.py --logo --flip --xheavy --boundary 2.0 --more3 --steps 6000 \
     --dilations 1 2 4 8 16 32 64 128   # held-out network outputs, for tuning
 python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
+                                       # then switch x2, w_seq 2.5, w_owner 0 (dev/exp_switch.py scans)
 .torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more3 \
     --seeds 5 --steps 6000 --dilations 1 2 4 8 16 32 64 128   # -> solution/seqnet.npz (5 networks)
 python dev/evaluate.py                 # held-out scores
