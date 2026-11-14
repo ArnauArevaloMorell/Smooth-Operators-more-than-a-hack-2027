@@ -9,7 +9,8 @@ Architecture (identical in dev/train_seqnet.py):
             every STRIDE frames (5 per second), standardised
     stem    1x1 convolution to C channels
     blocks  residual: x + W2 . relu(dilated 3-tap convolution(x)), dilations 1, 2, 4, ..., 64
-            -- each step sees about +/-25 s of the match around it
+            or ..., 128 (stored per network) -- each step sees about +/-25 s or +/-51 s of the
+            match around it
     head    1x1 convolution to 3 logits: home, away, dead
 
 Output: per-frame log-probabilities (T, 3) at the video frame rate, interpolated between steps.

@@ -18,7 +18,7 @@ Possession is a *segmentation* problem, and the ranking metric (`spellF1`) score
 possessions by temporal IoU, so we never decide frames independently. We compute physically
 meaningful per-frame evidence from the tracking — *is a player of either team on the ball*, *is
 the ball in play*, *which team's collective shape looks like attacking* — and give it to a
-**temporal convolutional network** that reads about ±25 s of the match around each moment and
+**temporal convolutional network** that reads about ±25 to ±51 s of the match around each moment and
 outputs, at every frame, the probability that home has the ball, away has it, or it is dead.
 Those probabilities, together with a few direct cues and the Smart Tagging restarts, are decoded
 for the whole half at once by a four-state Viterbi segmentation (`H`, `A`, dead-after-`H`,
@@ -173,8 +173,9 @@ halftime.
   for the decoder to fall back on in ball gaps.
 * **Temporal CNN** (`solution/seqnet.py`, trained by `dev/train_seqnet.py`): the dead-ball,
   ownership and hazard feature designs (251 columns) sampled 5 times a second and standardised; a
-  1×1 stem to 64 channels; seven residual blocks `x + W₂·relu(dilated 3-tap conv(x))` with
-  dilations 1, 2, …, 64 — each output step sees ~±25 s; a 1×1 head to three logits (home, away,
+  1×1 stem to 64 channels; seven or eight residual blocks `x + W₂·relu(dilated 3-tap conv(x))`
+  with dilations 1, 2, …, 64 or 1, 2, …, 128 — each output step sees ~±25 s or ~±51 s; a 1×1 head
+  to three logits (home, away,
   dead). Cross-entropy with steps within ±0.4 s of a label change weighted ×3 (spellF1's IoU is
   decided at the boundaries), AdamW, one-cycle schedule, 6,000 or 12,000 steps of 32 random 102-s crops. Halves
   are processed separately. Training data is doubled by **team-swap augmentation** — every case
@@ -183,7 +184,8 @@ halftime.
   every axis and with nine more noise draws (three each of light, medium, heavy) of every DFL match
   and six of every Metrica match. At inference the network also reads the match with the teams swapped and the two
   readings are averaged (**test-time team swap**). Shipped as an ensemble of ten networks, all trained on that
-  data (seeds 0–4 for 6,000 steps, seeds 5–9 for 12,000), whose probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
+  data: five that see ±51 s, trained for 6,000 steps (seeds 0–4), and five that see ±25 s, trained
+  for 12,000 (seeds 5–9); their probabilities are averaged; numpy reproduces PyTorch's outputs to < 1e-3 (checked at
   export). Held out: team accuracy 0.952 (ball gaps 0.910), alive/dead accuracy 0.963 (before
   the swap augmentation).
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
@@ -234,15 +236,15 @@ Held out (leave-one-group-out), official `possession_metrics.py`, final simulati
 
 | held-out cases | starter `baseline_smooth50` | per-frame models only (update 3) | **final, with temporal CNN** |
 |---|---|---|---|
-| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.809** (0.739 for the first network) |
-| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.789** (0.712) |
-| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.766** (0.670) |
+| Metrica light (6) | 0.321 / 0.646 | 0.663 / 0.909 | **0.819** (0.739 for the first network) |
+| Metrica medium (6) | 0.255 / 0.628 | 0.630 / 0.895 | **0.792** (0.712) |
+| Metrica heavy (6) — closest to BAR-ATH | 0.231 / 0.608 | 0.578 / 0.875 | **0.769** (0.670) |
 | DFL medium / heavy (7 + 7) | 0.271 / 0.204 | 0.651 / 0.584 | 0.953 / 0.948 (flattering, §4) |
 
 (spellF1 / macroF1; the final column is spellF1 with the shipped network recipe, held out on
-the Metrica folds, four networks averaged -- two of each training length; the shipped file averages ten.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
+the Metrica folds, four networks averaged -- two of each kind; the shipped file averages ten.) The starter baseline on the *heavy* simulation (0.231 / 0.608) sits next to its
 published BAR-ATH full-match score (0.243 / 0.672), so the simulation is a faithful stand-in; the
-heavy Metrica row, **~0.76 spellF1**, is our best estimate of the full-match result.
+heavy Metrica row, **~0.77 spellF1**, is our best estimate of the full-match result.
 
 How the score was built (held out; each row on the simulation as it stood at that step):
 
@@ -266,7 +268,8 @@ How the score was built (held out; each row on the simulation as it stood at tha
 | four times longer training (6000 steps instead of 1500) | Metrica mean 0.781, heavy 0.752 (two networks) |
 | networks trained for 6000 and for 12000 steps, averaged | Metrica mean 0.784, heavy 0.760 (four networks) |
 | + a third round of draws (three more per DFL and per Metrica match) for the 6000-step networks | Metrica mean 0.787, heavy 0.763 (four networks) |
-| **+ the same third round for the 12000-step networks** | Metrica mean **0.788**, heavy **0.766** (four networks) |
+| + the same third round for the 12000-step networks | Metrica mean 0.788, heavy 0.766 (four networks) |
+| **the 6000-step networks see ±51 s instead of ±25 s (dilation 128)** | Metrica mean **0.793**, heavy **0.769** (four networks) |
 
 Network variants we tested on the held-out Metrica matches (mean / heavy spellF1): team-swap
 augmentation 0.721 / 0.682; extra-heavy noise 0.710 / 0.679; **per-match input normalisation
@@ -283,7 +286,7 @@ beats every shorter one), and the two networks averaged 0.769 / 0.733, 0.776 / 0
 0.781 / 0.752. Most of the gain shows with the test-time team swap:
 the longer-trained networks are more confident, and the two views of the match disagree in more
 useful ways; a longer receptive field (±51 s, dilation 128) gave
-0.744 / 0.705, within seed noise, and multi-offset averaging at inference +0.001 — not shipped. Re-scanning the
+0.744 / 0.705 at that stage, within seed noise (it paid later, below), and multi-offset averaging at inference +0.001 — not shipped. Re-scanning the
 decoder's network weight and switch cost for the new outputs moved nothing beyond ±0.003.
 Doubling again to 12,000 steps did not help a single network (0.773 and 0.778; the two averaged
 0.781 / 0.758), but networks of the two lengths make different mistakes: one 6,000-step and one
@@ -303,6 +306,15 @@ The 12,000-step networks gained from the third round as well: 0.778 and 0.779 al
 draws gave nothing: 0.783 and 0.781 alone, 0.785 / 0.760 as a pair against 0.786 / 0.762, so
 training variety has run its course for this network. The decoder re-scan on the new outputs
 found +0.001 that leave-one-game-out did not confirm (0.785 against 0.788); decoder unchanged.
+The longer receptive field, which gave nothing at 1,500 steps, paid once the network was trained
+longer on all three rounds of draws: two 6,000-step networks that see ±51 s scored 0.789 and
+0.784 alone (against 0.782 and 0.782 for ±25 s), 0.792 / 0.766 as a pair (against 0.786 / 0.762),
+and with the two 12,000-step ±25 s networks **0.793 / 0.769** against 0.788 / 0.766 -- better on
+15 of the 18 held-out cases, worse on 2, and better on each of the three matches (+0.007, +0.004,
++0.005). Shipped: five ±51 s networks at 6,000 steps with the five 12,000-step networks. Doubling
+the view again (±102 s, dilation 256, trained on 205-s windows) was worse alone (0.782 / 0.750)
+and added nothing to the mix (better on 8 cases, worse on 9). The decoder re-scan on the new
+outputs again lost under leave-one-game-out (0.790 against 0.793); decoder unchanged.
 
 **Decisions made against the simulation's preference, for the real match.**
 
@@ -406,7 +418,7 @@ python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # 
                                        # held-out network outputs, for tuning
 python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
 .torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more3 \
-    --seeds 5 --steps 6000             # -> solution/seqnet.npz (networks 0-4)
+    --seeds 5 --steps 6000 --dilations 1 2 4 8 16 32 64 128   # -> solution/seqnet.npz (networks 0-4, ±51 s)
 .torchenv/bin/python dev/train_seqnet.py --final --resume --flip --xheavy --boundary 2.0 --more3 \
     --seeds 10 --steps 12000           # adds networks 5-9 (10-network ensemble)
 python dev/evaluate.py                 # held-out scores
