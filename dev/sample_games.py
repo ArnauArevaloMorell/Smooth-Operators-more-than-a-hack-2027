@@ -181,7 +181,12 @@ def labels_from_events(events, n_frames, period):
 
 
 def load_game(n):
-    """Game object for sample game 1, 2 or 3."""
+    """Game object for sample game 1, 2 or 3, or DFL match n - 4 (dev/dfl_games.py, games 4+)."""
+    if n >= 4:
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import dfl_games
+        return dfl_games.load(dfl_games.match_ids()[n - 4])
     if n in (1, 2):
         ball, xy, team, period, events = _load_csv_game(n)
     else:
