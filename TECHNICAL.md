@@ -36,7 +36,7 @@ ATD (players by team, ball) ──► features (metres, seconds, per half)
                                   │  shape:    per-team advancement, stretch, movement to goal
                                   │  touches:  contests, abrupt ball-velocity changes
                                   ▼
-          temporal CNN (5-network ensemble)  ─► P(home), P(away), P(dead) per frame
+          temporal CNN (10-network ensemble) ─► P(home), P(away), P(dead) per frame
           + dead-ball MLP, ownership & hazard models (direct cues, per-frame switch cost)
                                   ▼
 Smart Tagging ──► restart priors ──► emissions (T × 4) ──► Viterbi ──► H/A/D per frame
@@ -194,8 +194,8 @@ halftime.
   reason to prefer a side — and widened with an **extra-heavy** noise setting beyond BAR-ATH's on
   every axis and with nine more noise draws (three each of light, medium, heavy) of every DFL match
   and six of every Metrica match. At inference the network also reads the match with the teams swapped and the two
-  readings are averaged (**test-time team swap**). Shipped as an ensemble of five networks trained on all
-  of that data (seeds 0–4); their probabilities are averaged; numpy reproduces PyTorch's outputs to
+  readings are averaged (**test-time team swap**). Shipped as an ensemble of ten networks trained on all
+  of that data (seeds 0–9); their probabilities are averaged; numpy reproduces PyTorch's outputs to
   < 1e-3 (checked at export). Held out, the full pipeline's team accuracy on live frames is
   0.953 on Metrica and 0.909 on DFL (0.933 / 0.886 without the network).
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
@@ -255,7 +255,7 @@ check:
 | DFL heavy (7) — closest to BAR-ATH | 0.201 / 0.513 | 0.508 / 0.868 | **0.648 / 0.916** |
 
 (spellF1 / macroF1; the final column averages two networks of the shipped recipe per fold, each
-trained without the match it scores; the shipped file averages five. The middle column is the
+trained without the match it scores; the shipped file averages ten. The middle column is the
 per-frame models with update 14's decoder settings.) The starter baseline on
 the heavy Metrica simulation (0.231 / 0.608) sits next to its published BAR-ATH full-match score
 (0.243 / 0.672), so the simulation's noise is a fair stand-in. The heavy DFL row, **~0.65
@@ -354,6 +354,11 @@ Together, in the full pipeline: Metrica 0.740 → 0.748, DFL 0.651 → 0.658. A 
 ~20 decoder constants did not transfer — tuned on half the matches it lost 0.008 on the other half
 (and gained 0.002 the other way round) — so only those three constants changed. The phase-tag
 weight stayed at 0.1 (the tuner again wanted 0.85; see the phases decision below).
+Networks trained twice as long (12,000 steps) on the real data were no better alone (0.650 DFL /
+0.734 Metrica, against 0.645–0.653 / 0.739–0.742 for single 6,000-step networks) and slightly
+worse in the mix (−0.001 / −0.003), so they were dropped. Averaging two held-out networks instead
+of one was worth +0.004 to +0.013, so the shipped ensemble was doubled to ten 6,000-step networks
+(update 16; not measurable held out, expected to add a little).
 
 **Decisions made against the simulation's preference, for the real match.**
 
@@ -464,7 +469,7 @@ python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # 
 python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
                                        # then switch x2, w_seq 2.5, w_owner 0 (dev/exp_switch.py scans)
 .torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more3 \
-    --seeds 5 --steps 6000 --dilations 1 2 4 8 16 32 64 128   # -> solution/seqnet.npz (5 networks)
+    --seeds 10 --steps 6000 --dilations 1 2 4 8 16 32 64 128  # -> solution/seqnet.npz (10 networks)
 python dev/evaluate.py                 # held-out scores
 python -m solution.test                # loader / decoder / model-width / writer self-tests
 ```
