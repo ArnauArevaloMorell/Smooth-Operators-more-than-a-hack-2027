@@ -28,6 +28,10 @@ C = 64
 DILATIONS = (1, 2, 4, 8, 16, 32, 64)
 CROP = 512            # steps = 102 s
 IN_DROP = 0.0         # training only: share of input features blanked (set to their mean) per window
+AUX_OWN = 0.0         # training only: loss weight of the clean-owner head (0 = no second head)
+OWN_RADIUS = 1.5      # metres: a player this close to the ball in the CLEAN tracking "has" it
+SHORT_W = 1.0         # training only: loss-weight multiplier on possessions shorter than SHORT_S
+SHORT_S = 4.0
 BATCH = 32
 STEPS = 1500
 LR = 2e-3
@@ -83,6 +87,44 @@ def seq_direct(game_n, setting, seed, flip=False):
     return out
 
 
+def clean_owner(game_n):
+    """Per half, at the network's steps: which team has a player within OWN_RADIUS of the ball in
+    the clean (undegraded) tracking -- 0 home, 1 away, 2 nobody, 3 ball not tracked. A training-only
+    target for a second output head; prediction never reads it."""
+    path = os.path.join(hz.CACHE_DIR, "own_%d.npz" % game_n)
+    if os.path.isfile(path):
+        z = np.load(path)
+        return [z["o%d" % i] for i in range(int(z["n"]))]
+    import sample_games
+    g = sample_games.load_game(game_n)
+    sc = np.array(g.pitch, dtype=np.float64)
+    d = np.sqrt((((g.xy - g.ball[:, None, :]) * sc) ** 2).sum(axis=2))      # (T, players)
+    d = np.where(np.isfinite(d), d, np.inf)
+    dh = d[:, g.team == 0].min(axis=1)
+    da = d[:, g.team == 1].min(axis=1)
+    own = np.where(np.minimum(dh, da) <= OWN_RADIUS, np.where(dh <= da, 0, 1), 2)
+    own[~np.isfinite(g.ball).all(axis=1)] = 3
+    out = []
+    for s, e in hz.blocks_of(g.labels):
+        out.append(own[np.arange(s + seqnet.STRIDE // 2, e, seqnet.STRIDE)].astype(np.int64))
+    np.savez(path, n=len(out), **{("o%d" % i): o for i, o in enumerate(out)})
+    return out
+
+
+def own_targets(triples):
+    """Clean-owner targets aligned with training_seqs' output (halves come in order per key)."""
+    seen, out = {}, []
+    for x, y, key in triples:
+        i = seen.get(key, 0)
+        seen[key] = i + 1
+        o = clean_owner(key[0])[i].copy()
+        if "flip" in key:
+            o = np.where(o == 0, 1, np.where(o == 1, 0, o))
+        assert len(o) == len(y), (key, i, len(o), len(y))
+        out.append(o)
+    return out
+
+
 MORE = (("light", 40), ("medium", 41), ("heavy", 42))   # extra DFL draws for --more
 MORE2_DFL = (("light", 43), ("medium", 44), ("heavy", 45))  # --more2: three more per DFL match
 MORE2_METRICA = (("light", 50), ("medium", 51), ("heavy", 52))  # ... and three per Metrica match
@@ -131,8 +173,9 @@ class Net(nn.Module):
         self.c2 = nn.ModuleList([nn.Conv1d(C, C, 1) for _ in self.dilations])
         self.drop = nn.Dropout(0.1)
         self.head = nn.Conv1d(C, 3, 1)
+        self.aux = nn.Conv1d(C, 3, 1) if AUX_OWN > 0 else None    # clean-owner head (training only)
 
-    def forward(self, x):
+    def forward(self, x, with_aux=False):
         if self.training and IN_DROP > 0:
             # blank whole input features for a window (standardised, so 0 = the feature's mean):
             # the network cannot lean on any single cue that the real tracking may get wrong
@@ -141,6 +184,8 @@ class Net(nn.Module):
         x = self.stem(x)
         for c1, c2 in zip(self.c1, self.c2):
             x = x + c2(self.drop(torch.relu(c1(x))))
+        if with_aux:
+            return self.head(x), self.aux(x)
         return self.head(x)
 
 
@@ -150,6 +195,19 @@ def boundary_weights(y, radius=2, weight=2.0):
     ch = np.flatnonzero((y[1:] != y[:-1]) & (y[1:] != 3) & (y[:-1] != 3)) + 1
     for c in ch:
         w[max(0, c - radius):c + radius] += weight
+    return w
+
+
+def short_weights(y):
+    """SHORT_W on the steps of possessions (maximal H or A runs) shorter than SHORT_S, else 1."""
+    w = np.ones(len(y), dtype=np.float32)
+    n_short = int(round(SHORT_S * 25 / seqnet.STRIDE))
+    a = 0
+    for b in range(1, len(y) + 1):
+        if b == len(y) or y[b] != y[a]:
+            if y[a] in (0, 1) and b - a < n_short:
+                w[a:b] = SHORT_W
+            a = b
     return w
 
 
@@ -166,6 +224,7 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
     var = sum(((x - mean) ** 2).sum(axis=0) for x, _, _ in triples) / n
     std = np.sqrt(var) + 1e-6
     d_in = triples[0][0].shape[1]
+    owns = own_targets(triples) if AUX_OWN > 0 else None
     if permatch:
         # each (match, degradation, side) standardised by its own statistics, as at inference
         stats = {}
@@ -180,8 +239,11 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
             x, y, _ = triples.pop()
             seqs.append((((x - mean) / std).astype(np.float32), y))
         seqs.reverse()
+    assert owns is None or not permatch
     wts = [boundary_weights(y, weight=boundary) if boundary else np.ones(len(y), np.float32)
            for _, y in seqs]
+    if SHORT_W != 1.0:
+        wts = [w * short_weights(y) for w, (_, y) in zip(wts, seqs)]
     lengths = np.array([len(y) for _, y in seqs], dtype=float)
     net = Net(d_in, dilations)
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
@@ -189,25 +251,36 @@ def train(cases, seed=0, steps=STEPS, verbose=True, flip=False, xheavy=False, pe
     lossf = nn.CrossEntropyLoss(ignore_index=3, reduction="none")
     net.train()
     for step in range(steps):
-        xb, yb, wb = [], [], []
+        xb, yb, wb, ob = [], [], [], []
         for _ in range(BATCH):
             i = rng.choice(len(seqs), p=lengths / lengths.sum())
             x, y = seqs[i]
             a = rng.randint(0, max(1, len(y) - CROP))
             xs, ys, ws = x[a:a + CROP], y[a:a + CROP], wts[i][a:a + CROP]
+            os_ = owns[i][a:a + CROP] if owns is not None else ys
             if len(ys) < CROP:
                 xs = np.pad(xs, ((0, CROP - len(ys)), (0, 0)))
+                os_ = np.pad(os_, (0, CROP - len(ys)), constant_values=3)
                 ys = np.pad(ys, (0, CROP - len(ys)), constant_values=3)
                 ws = np.pad(ws, (0, CROP - len(ws)))
             xb.append(xs.T)
             yb.append(ys)
             wb.append(ws)
+            ob.append(os_)
         xb = torch.from_numpy(np.stack(xb))
         yb = torch.from_numpy(np.stack(yb))
         wb = torch.from_numpy(np.stack(wb))
-        per = lossf(net(xb), yb)
+        if owns is not None:
+            out, aux = net(xb, with_aux=True)
+        else:
+            out = net(xb)
+        per = lossf(out, yb)
         valid = (yb != 3).float()
         loss = (per * wb * valid).sum() / (wb * valid).sum().clamp(min=1.0)
+        if owns is not None:
+            obt = torch.from_numpy(np.stack(ob))
+            ov = (obt != 3).float()
+            loss = loss + AUX_OWN * (lossf(aux, obt) * ov).sum() / ov.sum().clamp(min=1.0)
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -241,7 +314,7 @@ def export(net, mean, std, permatch=False):
 
 
 def main():
-    global C, CROP, BATCH, IN_DROP
+    global C, CROP, BATCH, IN_DROP, AUX_OWN, SHORT_W
     ap = argparse.ArgumentParser()
     ap.add_argument("--logo", action="store_true")
     ap.add_argument("--final", action="store_true")
@@ -270,6 +343,11 @@ def main():
     ap.add_argument("--crop", type=int, default=CROP,
                     help="training window in steps (longer windows for wider receptive fields)")
     ap.add_argument("--batch", type=int, default=BATCH, help="windows per training step")
+    ap.add_argument("--aux-own", type=float, default=AUX_OWN,
+                    help="loss weight of a training-only head predicting who is on the ball in the "
+                         "clean tracking (0 = off)")
+    ap.add_argument("--short-w", type=float, default=SHORT_W,
+                    help="loss-weight multiplier on possessions shorter than 4 s (1 = off)")
     ap.add_argument("--in-drop", type=float, default=IN_DROP,
                     help="training only: share of input features blanked per window")
     ap.add_argument("--resume", action="store_true",
@@ -278,7 +356,7 @@ def main():
                     help="LOGO on the Metrica folds, training on Metrica cases only (ablation)")
     a = ap.parse_args()
     C = a.channels
-    CROP, BATCH, IN_DROP = a.crop, a.batch, a.in_drop
+    CROP, BATCH, IN_DROP, AUX_OWN, SHORT_W = a.crop, a.batch, a.in_drop, a.aux_own, a.short_w
     torch.set_num_threads(int(os.environ.get("SEQ_THREADS", "4")))
     for c in hz.CASES:
         case_seq(c)

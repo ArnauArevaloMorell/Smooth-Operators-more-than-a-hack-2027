@@ -195,7 +195,10 @@ halftime.
   every axis and with nine more noise draws (three each of light, medium, heavy) of every DFL match
   and six of every Metrica match. At inference the network also reads the match with the teams swapped and the two
   readings are averaged (**test-time team swap**). Shipped as an ensemble of ten networks trained on all
-  of that data (seeds 0–9); their probabilities are averaged; numpy reproduces PyTorch's outputs to
+  of that data: five as described (seeds 0–4) and five that also learn a second, **training-only
+  output** — which team has a player within 1.5 m of the ball in the *clean* tracking, before
+  degradation (seeds 0–4, that loss at weight 0.5). Prediction never reads the second head and it
+  is not exported; it only shapes what the network learns. Their probabilities are averaged; numpy reproduces PyTorch's outputs to
   < 1e-3 (checked at export). Held out, the full pipeline's team accuracy on live frames is
   0.953 on Metrica and 0.909 on DFL (0.933 / 0.886 without the network).
 * **Switch hazard:** MLP (32 units) predicting "the ball changes hands within ±5 frames of here"
@@ -254,8 +257,9 @@ check:
 | DFL medium (7) | 0.231 / 0.533 | 0.537 / 0.880 | **0.669 / 0.924** |
 | DFL heavy (7) — closest to BAR-ATH | 0.201 / 0.513 | 0.508 / 0.868 | **0.648 / 0.916** |
 
-(spellF1 / macroF1; the final column averages two networks of the shipped recipe per fold, each
-trained without the match it scores; the shipped file averages ten. The middle column is the
+(spellF1 / macroF1; the final column averages two plain networks per fold, each trained without
+the match it scores; the shipped file averages ten, half of them with the clean-owner head, which
+held out scored the same on DFL and +0.004 on Metrica. The middle column is the
 per-frame models with update 14's decoder settings.) The starter baseline on
 the heavy Metrica simulation (0.231 / 0.608) sits next to its published BAR-ATH full-match score
 (0.243 / 0.672), so the simulation's noise is a fair stand-in. The heavy DFL row, **~0.65
@@ -359,6 +363,11 @@ Networks trained twice as long (12,000 steps) on the real data were no better al
 worse in the mix (−0.001 / −0.003), so they were dropped. Averaging two held-out networks instead
 of one was worth +0.004 to +0.013, so the shipped ensemble was doubled to ten 6,000-step networks
 (update 16; not measurable held out, expected to add a little).
+The clean-owner second head (update 17; idea credited in §9) made a single network about as good
+as the better of two plain seeds (DFL 0.654 against 0.645 / 0.653, Metrica 0.743 against 0.739 /
+0.742), and paired with a plain network it beat two plain networks on Metrica (0.752 against 0.748,
+both pairings) while matching them on DFL (0.656 / 0.660 against 0.658). So the shipped ten are
+five of each.
 
 **Decisions made against the simulation's preference, for the real match.**
 
@@ -468,8 +477,11 @@ python -m venv .torchenv && .torchenv/bin/pip install torch numpy pandas      # 
     --dilations 1 2 4 8 16 32 64 128   # held-out network outputs, for tuning
 python dev/tune.py --rounds 2 --settings medium heavy --out solution/params.json
                                        # then switch x2, w_seq 2.5, w_owner 0 (dev/exp_switch.py scans)
-.torchenv/bin/python dev/train_seqnet.py --final --flip --xheavy --boundary 2.0 --more3 \
-    --seeds 10 --steps 6000 --dilations 1 2 4 8 16 32 64 128  # -> solution/seqnet.npz (10 networks)
+.torchenv/bin/python dev/train_seqnet.py --final --out plain.npz --flip --xheavy --boundary 2.0 \
+    --more3 --seeds 5 --steps 6000 --dilations 1 2 4 8 16 32 64 128                  # networks 0-4
+.torchenv/bin/python dev/train_seqnet.py --final --out own.npz --flip --xheavy --boundary 2.0 \
+    --more3 --seeds 5 --steps 6000 --dilations 1 2 4 8 16 32 64 128 --aux-own 0.5     # networks 5-9
+python dev/merge_nets.py solution/seqnet.npz plain.npz own.npz
 python dev/evaluate.py                 # held-out scores
 python -m solution.test                # loader / decoder / model-width / writer self-tests
 ```
@@ -477,8 +489,13 @@ python -m solution.test                # loader / decoder / model-width / writer
 ## 9. Other teams' public work
 
 The competition repositories of other teams are public. We read them (code and write-ups only;
-two forks that appeared to contain the gated match data were not opened). Two ideas we found in
-common use there shaped our final weeks, and are credited here: the **DFL/IDSSE open dataset** as
-external training data, and a **temporal convolutional network over per-frame features**. Both were
-re-implemented independently and kept only after our own held-out tests showed a gain (§4, §6).
+forks that appeared to contain the gated match data, or data derived from it, were not opened).
+Two ideas we found in common use there shaped our final weeks, and are credited here: the
+**DFL/IDSSE open dataset** as external training data, and a **temporal convolutional network over
+per-frame features**. A third came from one team's write-up (Barca-Hackathon): a **training-only
+"clean-owner" output head**. All three were re-implemented independently and kept only after our
+own held-out tests showed a gain (§4, §6). Ideas we read about but did not adopt: SkillCorner open
+tracking as more training data (reported gain +0.002–0.004 by the team that used it), PFF FC World
+Cup tracking and learned ball-trajectory filling (too large to integrate and validate in the time
+left).
 Nothing was copied; no other team's labels, models or outputs were used.
