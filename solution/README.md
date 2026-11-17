@@ -3,7 +3,7 @@
 | | command | held-out spellF1, heavy noise (closest to BAR-ATH): DFL / Metrica |
 |---|---|---|
 | **learned pipeline + temporal CNN (submission)** | `python -m solution.make_submission --team <team_name>` | **0.648 / 0.717** |
-| learned pipeline, per-frame models only | same, with update 14's `params.json` and `w_seq` set to 0 | 0.508 / 0.576 |
+| learned pipeline, per-frame models only | same, without the network (`w_seq` 0, `w_owner` 0.5, `switch` 5.357143 in `solution/params.json`) | 0.508 / 0.576 |
 | rule-based v1 (steps below) | `python solution/03_possession_v1.py` | — / ~0.28 (18-case Metrica average 0.303) |
 | starter `baseline_smooth50` | `python starter/baseline.py` | 0.201 / 0.231 |
 

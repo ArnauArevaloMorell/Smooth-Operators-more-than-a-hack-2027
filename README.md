@@ -2,7 +2,8 @@
 
 > **Team Smooth Operators — our solution.** Method, assets, training data, possession rules,
 > limitations: **[TECHNICAL.md](TECHNICAL.md)**. Code: [`solution/`](solution/) (the pipeline) and
-> [`dev/`](dev/) (training/tuning on Metrica's public sample games — no BAR-ATH labels used).
+> [`dev/`](dev/) (training/tuning on Metrica's public sample games and the DFL/IDSSE open matches — no
+> BAR-ATH labels used).
 > Regenerate the submission from the provided data:
 >
 > ```bash
