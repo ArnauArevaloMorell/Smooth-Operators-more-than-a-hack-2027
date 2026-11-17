@@ -61,7 +61,7 @@ sign check (every line should be positive; if a code is negative, flip it in `AT
 4. **Evidence per half** and `switch_cost` chosen by reasoning (e.g. typical possession length), not by the 5 public minutes.
 
 ## Rules reminders (RULES.md / FAQ.md)
-- Never upload the data, or extracts of it, to a hosted LLM (ChatGPT, Claude, Gemini...).
+- Never upload the data, or extracts of it, to any third-party hosted service.
 - Do not tune or train on the public 5 minutes; use them only to check the pipeline.
 - No hand labelling of this match. Your repo must regenerate the exact CSV and must NOT contain `data/`.
 - Submission: `<team_name>.csv` (199,319 rows) + `<team_name>.pdf` + public repo URL, before **17 Nov 2026**.
