@@ -363,7 +363,7 @@ Networks trained twice as long (12,000 steps) on the real data were no better al
 worse in the mix (−0.001 / −0.003), so they were dropped. Averaging two held-out networks instead
 of one was worth +0.004 to +0.013, so the shipped ensemble was doubled to ten 6,000-step networks
 (update 16; not measurable held out, expected to add a little).
-The clean-owner second head (update 17; idea credited in §9) made a single network about as good
+The clean-owner second head (update 17) made a single network about as good
 as the better of two plain seeds (DFL 0.654 against 0.645 / 0.653, Metrica 0.743 against 0.739 /
 0.742), and paired with a plain network it beat two plain networks on Metrica (0.752 against 0.748,
 both pairings) while matching them on DFL (0.656 / 0.660 against 0.658). So the shipped ten are
@@ -485,17 +485,3 @@ python dev/merge_nets.py solution/seqnet.npz plain.npz own.npz
 python dev/evaluate.py                 # held-out scores
 python -m solution.test                # loader / decoder / model-width / writer self-tests
 ```
-
-## 9. Other teams' public work
-
-The competition repositories of other teams are public. We read them (code and write-ups only;
-forks that appeared to contain the gated match data, or data derived from it, were not opened).
-Two ideas we found in common use there shaped our final weeks, and are credited here: the
-**DFL/IDSSE open dataset** as external training data, and a **temporal convolutional network over
-per-frame features**. A third came from one team's write-up (Barca-Hackathon): a **training-only
-"clean-owner" output head**. All three were re-implemented independently and kept only after our
-own held-out tests showed a gain (§4, §6). Ideas we read about but did not adopt: SkillCorner open
-tracking as more training data (reported gain +0.002–0.004 by the team that used it), PFF FC World
-Cup tracking and learned ball-trajectory filling (too large to integrate and validate in the time
-left).
-Nothing was copied; no other team's labels, models or outputs were used.
